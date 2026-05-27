@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title><!-- TODO: replace site title --><PLATFORM>常驻服务</title>
+  <style>
+    /* Minimum-viable inlined CSS. Extend per design needs.
+       Color tokens kept simple and accessible. No third-party CSS. */
+    :root {
+      --bg: #f4f6f9;
+      --primary: #2563eb;
+      --success: #16a34a;
+      --danger: #dc2626;
+      --warning: #d97706;
+      --border: #e2e8f0;
+      --shadow: 0 1px 3px rgba(0,0,0,.08);
+      --radius: 8px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: #1e293b;
+      font-size: 14px;
+    }
+    header.top {
+      position: sticky; top: 0; z-index: 100;
+      background: #fff; border-bottom: 1px solid var(--border);
+      padding: 10px 20px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+      box-shadow: var(--shadow);
+    }
+    header h1 { margin: 0; font-size: 1.1rem; font-weight: 700; }
+    .badge { padding: 3px 10px; border-radius: 999px; font-size: 12px; background: #dbeafe; color: #1d4ed8; }
+    .badge.paused { background: #fee2e2; color: #b91c1c; }
+    .badge.running { background: #dcfce7; color: #166534; }
+    .hdr-actions { display: flex; gap: 8px; align-items: center; margin-left: auto; flex-wrap: wrap; }
+    .overview { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; padding: 14px 20px; }
+    .stat { background: #fff; border-radius: var(--radius); padding: 12px 14px; box-shadow: var(--shadow); cursor: pointer; }
+    .stat strong { display: block; font-size: 1.5rem; font-weight: 700; }
+    .stat span { font-size: 12px; color: #64748b; }
+    .stat.c-success strong { color: var(--success); }
+    .stat.c-danger strong { color: var(--danger); }
+    .stat.c-primary strong { color: var(--primary); }
+    .card { margin: 0 20px 16px; background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+    .card-head { padding: 11px 16px; border-bottom: 1px solid var(--border); font-weight: 600; }
+    .card-body { padding: 16px; }
+    .form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
+    .form-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: #475569; }
+    input, select { padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; width: 100%; }
+    .btn { padding: 7px 14px; border-radius: 6px; border: none; cursor: pointer; font-size: 13px; font-weight: 500; }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-success { background: var(--success); color: #fff; }
+    .btn-danger { background: var(--danger); color: #fff; }
+    .btn-ghost { background: #f1f5f9; color: #334155; border: 1px solid var(--border); }
+    .btn-sm { padding: 4px 10px; font-size: 12px; }
+    .row-flex { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+    .filter-bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+    .filter-pill { padding: 4px 12px; border-radius: 999px; font-size: 12px; cursor: pointer; border: 1px solid var(--border); background: #f8fafc; color: #475569; }
+    .filter-pill.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { padding: 9px 10px; border-bottom: 2px solid var(--border); text-align: left; font-weight: 600; color: #475569; }
+    td { padding: 8px 10px; border-bottom: 1px solid var(--border); }
+    .pill { display: inline-block; padding: 2px 8px; border-radius: 4px; background: #f1f5f9; font-size: 11px; }
+    .pill.queued { background: #f1f5f9; color: #475569; }
+    .pill.running { background: #dbeafe; color: #1d4ed8; }
+    .pill.waiting_apply { background: #fef3c7; color: #92400e; }
+    .pill.completed { background: #dcfce7; color: #166534; }
+    .pill.failed { background: #fee2e2; color: #b91c1c; }
+    .empty { padding: 24px; text-align: center; color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <h1><PLATFORM>常驻服务</h1>
+    <span id="schedBadge" class="badge running">运行中</span>
+    <label>并发上限 <input id="limitInp" type="number" min="1" max="50" value="3" style="width:60px"></label>
+    <div class="hdr-actions">
+      <button class="btn btn-ghost btn-sm" id="pauseBtn">暂停</button>
+      <button class="btn btn-ghost btn-sm" id="resumeBtn" style="display:none">恢复</button>
+      <a class="btn btn-ghost btn-sm" href="/api/template">下载模板</a>
+      <a class="btn btn-ghost btn-sm" href="/api/export">导出</a>
+    </div>
+  </header>
+
+  <section class="overview" id="overview"></section>
+
+  <section class="card">
+    <div class="card-head">添加账号</div>
+    <div class="card-body">
+      <div class="form-grid">
+        <label>姓名<input id="f_name"></label>
+        <label>账号<input id="f_user"></label>
+        <label>密码<input id="f_pwd" type="password"></label>
+        <label>学科1<input id="f_cat1"></label>
+        <label>学分1<input id="f_cr1" type="number" step="0.5"></label>
+        <label>学科2（可选）<input id="f_cat2"></label>
+        <label>学分2（可选）<input id="f_cr2" type="number" step="0.5"></label>
+      </div>
+      <div class="row-flex">
+        <button class="btn btn-primary" id="addBtn">添加</button>
+        <label class="btn btn-ghost" style="cursor:pointer">
+          上传 Excel<input id="upBtn" type="file" accept=".xlsx" hidden>
+        </label>
+        <span id="addMsg" style="color:#64748b"></span>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">账号列表</div>
+    <div class="card-body">
+      <div class="filter-bar">
+        <input id="searchInp" placeholder="搜索姓名/账号" style="max-width:220px">
+        <span id="filters"></span>
+      </div>
+      <table>
+        <thead><tr>
+          <th>姓名</th><th>账号</th><th>学科需求</th><th>状态</th><th>说明</th><th>操作</th>
+        </tr></thead>
+        <tbody id="tbody"><tr><td colspan="6" class="empty">加载中…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+<script>
+const API = "/api";
+let state = { status: null, search: "" };
+
+async function api(path, init = {}) {
+  const r = await fetch(API + path, {
+    headers: { "Content-Type": "application/json" },
+    ...init,
+  });
+  if (!r.ok) throw new Error(await r.text());
+  return r.headers.get("content-type")?.includes("json") ? r.json() : r.text();
+}
+
+function renderOverview(counts, sched) {
+  const tiles = [
+    ["total", "总数", ""],
+    ["queued", "排队", ""],
+    ["running", "进行中", "c-primary"],
+    ["waiting_apply", "等待申请", ""],
+    ["completed", "已完成", "c-success"],
+    ["failed", "失败", "c-danger"],
+  ];
+  document.getElementById("overview").innerHTML = tiles.map(([k, label, cls]) => `
+    <div class="stat ${cls}" data-status="${k === 'total' ? '' : k}">
+      <strong>${counts[k] || 0}</strong><span>${label}</span>
+    </div>
+  `).join("") + `
+    <div class="stat"><strong>${sched.active_workers || 0}</strong><span>活跃 Worker</span></div>
+  `;
+  document.querySelectorAll("#overview .stat[data-status]").forEach(el => {
+    el.onclick = () => { state.status = el.dataset.status || null; renderFilters(); refresh(); };
+  });
+  const badge = document.getElementById("schedBadge");
+  badge.textContent = sched.paused ? "已暂停" : "运行中";
+  badge.className = "badge " + (sched.paused ? "paused" : "running");
+  document.getElementById("pauseBtn").style.display = sched.paused ? "none" : "";
+  document.getElementById("resumeBtn").style.display = sched.paused ? "" : "none";
+}
+
+const STATUSES = [
+  ["", "全部"], ["queued", "排队"], ["running", "进行中"],
+  ["waiting_apply", "等待申请"], ["completed", "已完成"], ["failed", "失败"],
+];
+function renderFilters() {
+  document.getElementById("filters").innerHTML = STATUSES.map(([k, label]) => `
+    <span class="filter-pill ${(state.status || "") === k ? "active" : ""}" data-k="${k}">${label}</span>
+  `).join("");
+  document.querySelectorAll(".filter-pill").forEach(el => {
+    el.onclick = () => { state.status = el.dataset.k || null; renderFilters(); refresh(); };
+  });
+}
+
+function pill(status) {
+  const labels = { queued: "排队", running: "进行中", waiting_apply: "等待申请",
+                   completed: "已完成", failed: "失败", retrying: "重试", paused: "暂停" };
+  return `<span class="pill ${status}">${labels[status] || status}</span>`;
+}
+
+function renderRows(items) {
+  if (!items.length) {
+    document.getElementById("tbody").innerHTML = `<tr><td colspan="6" class="empty">无数据</td></tr>`;
+    return;
+  }
+  document.getElementById("tbody").innerHTML = items.map(a => `
+    <tr>
+      <td>${a.display_name || ""}</td>
+      <td>${a.username}</td>
+      <td>${(a.requirements || []).map(r => `${r.category} ${r.credits}学分`).join("<br>")}</td>
+      <td>${pill(a.status)}</td>
+      <td style="color:#64748b">${a.status_msg || ""}</td>
+      <td>
+        <button class="btn btn-ghost btn-sm" onclick="requeue(${a.id})">重入队</button>
+        <button class="btn btn-danger btn-sm" onclick="del(${a.id})">删除</button>
+      </td>
+    </tr>
+  `).join("");
+}
+
+async function refresh() {
+  try {
+    const params = new URLSearchParams();
+    if (state.status) params.set("status", state.status);
+    if (state.search) params.set("search", state.search);
+    const data = await api("/accounts?" + params);
+    renderOverview(data.counts || {}, data);
+    renderRows(data.items || []);
+    document.getElementById("limitInp").value = data.concurrency_limit || 3;
+  } catch (e) { console.error(e); }
+}
+
+document.getElementById("addBtn").onclick = async () => {
+  const reqs = [];
+  const c1 = document.getElementById("f_cat1").value.trim();
+  const r1 = parseFloat(document.getElementById("f_cr1").value);
+  if (c1 && r1 > 0) reqs.push({ category: c1, credits: r1 });
+  const c2 = document.getElementById("f_cat2").value.trim();
+  const r2 = parseFloat(document.getElementById("f_cr2").value);
+  if (c2 && r2 > 0) reqs.push({ category: c2, credits: r2 });
+  try {
+    await api("/accounts", { method: "POST", body: JSON.stringify({
+      display_name: document.getElementById("f_name").value,
+      username: document.getElementById("f_user").value,
+      password: document.getElementById("f_pwd").value,
+      requirements: reqs,
+    })});
+    document.getElementById("addMsg").textContent = "添加成功";
+    ["f_name","f_user","f_pwd","f_cat1","f_cr1","f_cat2","f_cr2"].forEach(id => document.getElementById(id).value = "");
+    refresh();
+  } catch (e) { document.getElementById("addMsg").textContent = "失败: " + e.message; }
+};
+
+document.getElementById("upBtn").onchange = async (e) => {
+  const file = e.target.files[0]; if (!file) return;
+  const fd = new FormData(); fd.append("file", file);
+  try {
+    const r = await fetch(API + "/accounts/upload", { method: "POST", body: fd });
+    const j = await r.json();
+    document.getElementById("addMsg").textContent = `导入：新增 ${j.added}，跳过 ${j.skipped}，失败 ${j.failed}`;
+    refresh();
+  } catch (err) { document.getElementById("addMsg").textContent = "上传失败"; }
+  e.target.value = "";
+};
+
+document.getElementById("pauseBtn").onclick = () => api("/scheduler/pause", { method: "POST" }).then(refresh);
+document.getElementById("resumeBtn").onclick = () => api("/scheduler/resume", { method: "POST" }).then(refresh);
+document.getElementById("limitInp").onchange = (e) =>
+  api("/scheduler/limit", { method: "POST", body: JSON.stringify({ limit: parseInt(e.target.value, 10) }) });
+
+document.getElementById("searchInp").oninput = (e) => {
+  state.search = e.target.value;
+  clearTimeout(window._st); window._st = setTimeout(refresh, 300);
+};
+
+window.requeue = (id) => api(`/accounts/${id}/requeue`, { method: "POST" }).then(refresh);
+window.del = (id) => {
+  if (!confirm("确认删除？")) return;
+  api(`/accounts/${id}`, { method: "DELETE" }).then(refresh);
+};
+
+renderFilters();
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>

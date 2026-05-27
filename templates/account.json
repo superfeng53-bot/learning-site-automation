@@ -1,0 +1,7 @@
+{
+  "platform": "<PLATFORM>",
+  "site_url": "<SITE_URL>",
+  "username": "<USERNAME>",
+  "password": "<PASSWORD>",
+  "notes": "Test account for local development only. This file must be in .gitignore."
+}
