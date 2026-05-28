@@ -142,13 +142,13 @@ zoneinfo / openpyxl / ddddocr / pycryptodome
 
 ### 5.3 日切闸门
 
-- 早于 **<DAILY_START_HOUR>:00**（Asia/Shanghai）→ 推迟 `queued_at` 到今日 <DAILY_START_HOUR>:00
+- 早于 **8:00**（Asia/Shanghai）→ 推迟 `queued_at` 到今日 8:00
 
 ### 5.4 学习前闸门
 
 按顺序：
 1. 有 `state == "learned"` 的单元 → `waiting_apply`
-2. 今日已学完 <MAX_LEARN_PER_DAY> 门 → 推迟到明日 <DAILY_START_HOUR>:00
+2. 今日已学完 <MAX_LEARN_PER_DAY> 门 → 推迟到明日 8:00
 3. 选 `queue_rank` 最小的待学单元
 
 ### 5.5 学习循环
@@ -159,7 +159,7 @@ zoneinfo / openpyxl / ddddocr / pycryptodome
 
 | 结果 | 调度器动作 |
 |------|-----------|
-| 成功 | `state=learned`，写 `apply_queue`（`next_attempt_at=次日 <DAILY_START_HOUR>:00`），账号 `waiting_apply` |
+| 成功 | `state=learned`，写 `apply_queue`（`next_attempt_at=次日 8:00`），账号 `waiting_apply` |
 | 可重试失败 | `retrying`，`retry_count+1`，60s 后重试；达上限 → `failed` |
 | 不可重试 | `failed` |
 | 全部完成 | `completed` |
@@ -170,7 +170,7 @@ zoneinfo / openpyxl / ddddocr / pycryptodome
 
 每次 tick 调用 `ApplyWorker.process_one()`：
 
-1. 今日成功数 ≥ <MAX_APPLY_PER_DAY> → 整账号推迟到明日 <DAILY_START_HOUR>:00
+1. 今日成功数 ≥ <MAX_APPLY_PER_DAY> → 整账号推迟到明日 8:00
 2. 复用 `cookies` 加载会话
 3. `<APPLY_API_CALL>`
 4. 成功 → `apply_queue.status=succeeded`，写流水，单元 `state=applied`
@@ -185,9 +185,9 @@ zoneinfo / openpyxl / ddddocr / pycryptodome
 
 | 规则 | 值 |
 |------|---|
-| 日窗口起点 | <DAILY_START_HOUR>:00 Asia/Shanghai |
+| 日窗口起点 | 8:00 Asia/Shanghai |
 | 每日学习上限 | <MAX_LEARN_PER_DAY> 门/账号 |
-| 学完当日不申请 | 申请 `next_attempt_at = 次日 <DAILY_START_HOUR>:00` |
+| 学完当日不申请 | 申请 `next_attempt_at = 次日 8:00` |
 | 每日申请成功上限 | <MAX_APPLY_PER_DAY> 门/账号 |
 | 申请优先于新学 | 有 `learned` 时不开新学 |
 
@@ -197,7 +197,8 @@ zoneinfo / openpyxl / ddddocr / pycryptodome
 
 | 项 | 值 |
 |----|---|
-| 并发上限 | 手动设置，范围 `[1, <CONCURRENCY_MAX>]` |
+| 默认同时运行账号数 | **400**（服务启动时的 `concurrency_limit` 默认值） |
+| 并发上限 | 手动设置，范围 `[1, 400]` |
 | 错峰间隔 | <STAGGER_SEC>s（每个 tick 最多启动 1 个） |
 | Tick 周期 | <TICK_SEC>s |
 | 申请侧 | 独立通道，不占学习并发 |
@@ -237,7 +238,7 @@ zoneinfo / openpyxl / ddddocr / pycryptodome
 - [ ] 学习队列与申请队列分通道，`waiting_apply` 不占学习并发
 - [ ] 单账号管线：Token 复用 → 分配 → 日闸门 → 学习 → 结果归并
 - [ ] 课程 `state` 与 `queue_rank` 全局排序
-- [ ] 日切 <DAILY_START_HOUR>:00 固定，每日 <MAX_LEARN_PER_DAY> 学，每日 <MAX_APPLY_PER_DAY> 申
+- [ ] 日切 8:00 固定，每日 <MAX_LEARN_PER_DAY> 学，每日 <MAX_APPLY_PER_DAY> 申
 - [ ] 申请优先：有 `learned` 时不开新学
 - [ ] 并发可调、可暂停、活跃计数准确（finally 释放）
 - [ ] 崩溃恢复不打死账号
@@ -246,4 +247,4 @@ zoneinfo / openpyxl / ddddocr / pycryptodome
 
 ---
 
-*用前填空：`<PLATFORM> / <SITE_URL> / <DOMAIN> / <DAILY_START_HOUR> / <MAX_LEARN_PER_DAY> / <MAX_APPLY_PER_DAY> / <CONCURRENCY_MAX> / <STAGGER_SEC> / <TICK_SEC> / <APPLY_RATE_BACKOFF_SEC> / <MAX_APPLY_ATTEMPTS> / <LLM_MODEL> / <ASSIGNMENT_PIPELINE> / <APPLY_API_CALL> / <LIGHT_BUSINESS_GET> / <EXTRA_FIELDS>`*
+*用前填空：`<PLATFORM> / <SITE_URL> / <DOMAIN> / 8 / <MAX_LEARN_PER_DAY> / <MAX_APPLY_PER_DAY> / 400 / <STAGGER_SEC> / <TICK_SEC> / <APPLY_RATE_BACKOFF_SEC> / <MAX_APPLY_ATTEMPTS> / <LLM_MODEL> / <ASSIGNMENT_PIPELINE> / <APPLY_API_CALL> / <LIGHT_BUSINESS_GET> / <EXTRA_FIELDS>`*
