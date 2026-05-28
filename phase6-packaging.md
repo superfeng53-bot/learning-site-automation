@@ -4,9 +4,13 @@ Goal: make the project trivial for non-developers to use. Double-click → servi
 
 ## Definition of Done
 
-- [ ] `start.sh` (POSIX) and `start.bat` (Windows) create `.venv`, install deps, run `run_service.py`
-- [ ] `build.sh` / `build.bat` produce a single-file binary in `dist/` with the naming convention `<site>_<DD>_<MM>` (e.g. `双卫网_27_05.exe`)
-- [ ] `scripts/build.py` and `scripts/<site>.spec.template` drive PyInstaller; the binary opens browser on launch
+- [ ] `start.sh` (POSIX) and `start.bat` (Windows) create `.venv`, install deps, run `run_service.py` — **一键启动**（双击即可，无需手动 `pip`）
+- [ ] `run_service.py` 满足 phase5「Service Entry」：单实例、**二次启动只打开已有 WebUI**、端口避让、`endpoint.json`
+- [ ] `build.sh` / `build.bat` produce a **single-file** binary in `dist/` with naming `<平台中文名>_<DD>_<MM>` (e.g. `双卫网_27_05.exe`) — **日、月** 两位，构建日当天
+- [ ] PyInstaller **onefile**：`ddddocr` ONNX、FastAPI 模板、`uvicorn` hiddenimports 全部打进包；目标机**无需安装 Python** 即可运行
+- [ ] 打包产物 `console=True`：**保留终端窗口**输出 uvicorn/报错（禁止 `console=False` / windowed 无控制台）
+- [ ] 首次运行打包 exe：自动打开浏览器；**再次双击 exe**：只打开已有控制台 URL，不启动第二进程
+- [ ] 将 `dist/` 内单文件复制到**另一台电脑或另一目录**运行：`data/`、`.run/` 在 exe 同目录创建，Web 可访问
 - [ ] `.github/workflows/ci.yml` runs lint + import smoke test on push/PR
 - [ ] `README.md` has install, run, build, layout sections
 - [ ] `pyproject.toml` declares dependencies + metadata
@@ -135,7 +139,8 @@ Critical bits:
 1. `datas` MUST include the FastAPI HTML template (PyInstaller doesn't auto-discover).
 2. `collect_data_files('ddddocr')` pulls in the ONNX models.
 3. `hiddenimports` for uvicorn dynamic imports.
-4. `console=True` keeps the log visible so non-devs can copy errors when something breaks.
+4. `console=True` **mandatory** — 打包后必须有终端窗口持续显示运行日志；非开发用户可复制报错。禁止改为无控制台 windowed 模式。
+5. **onefile only** — 交付物是单个 `.exe` / 单个 macOS 可执行文件，不要把 `dist/<name>/` 文件夹当最终交付（除非用户明确要求目录版）。
 
 ## `requirements-build.txt`
 
@@ -267,9 +272,12 @@ data/
 ## End-of-phase Report
 
 1. Confirm `./start.sh` works on a clean clone (`rm -rf .venv data/cookies.json && ./start.sh`).
-2. Confirm `./build.sh` produces the binary; run it from a different directory; confirm `.run/` and `data/` are created next to the binary.
-3. Confirm CI passes (push to branch, wait for green).
-4. Project is shippable. Suggest the user: rename remote `<user>/<repo>` in `pyproject.toml` and `README.md`, commit, push.
+2. **二次启动**：服务仍在运行时再执行 `./start.sh`（或再双击 exe）→ 仅打开浏览器，任务管理器里仍只有一个服务进程。
+3. Confirm `./build.sh` produces `dist/<平台>_<DD>_<MM>.exe` (or mac binary); filename matches build date.
+4. Run the binary from a **different directory** or copy to another machine; confirm `.run/`、`data/` beside the exe and Web UI loads.
+5. Confirm packaged app shows a **console window** with live logs while running.
+6. Confirm CI passes (push to branch, wait for green).
+7. Project is shippable. Suggest the user: rename remote `<user>/<repo>` in `pyproject.toml` and `README.md`, commit, push.
 
 ## Pitfalls
 

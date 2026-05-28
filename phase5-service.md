@@ -12,7 +12,8 @@ Goal: turn the single-account runner into a long-running scheduler that drives m
 - [ ] `<svc>/web/templates/index.html` generated strictly per `web-ui-spec.md` (简体中文, 复制日志, single file, ≤ 1200 LOC)
 - [ ] `<svc>/web/excel_io.py` (or equivalent) implements import/export per `excel-spec.md` (中文文件名/表头, 导出列对齐)
 - [ ] All items in `web-ui-spec.md` §10 and `excel-spec.md` §6 verification checklists pass
-- [ ] `run_service.py` at project root: single-instance lock + port avoidance + auto-open browser
+- [ ] `run_service.py` at project root: single-instance lock + **二次启动只打开已有 WebUI** + port avoidance + auto-open browser
+- [ ] `<svc>/runtime.py` writes `.run/service/endpoint.json` while running; second process reads it and exits after `webbrowser.open`
 - [ ] Crash recovery: restarting the service requeues `running` accounts and `in_flight` apply tasks
 
 ## Read First
@@ -244,10 +245,39 @@ Sensitive fields (`password`, `cookies`, `card_password`) MUST be stripped from 
 
 ## Service Entry — `run_service.py`
 
+### Hard requirements (non-negotiable)
+
+| 行为 | 要求 |
+|------|------|
+| 单实例 | 同一 `project_root()` 下只允许一个服务进程持有 `service.lock` |
+| 二次启动 | 若锁已被占用：**不得**再起第二个 uvicorn；读取 `.run/service/endpoint.json` 中的 `url`，调用 `webbrowser.open(url)`（除非 `--no-browser`），然后 **立即退出 0** |
+| 端口避让 | 默认 `17865`；若被占用，`find_available_port` 递增尝试直到可用 |
+| 元数据 | 主进程 bind 成功后写入 `endpoint.json`：`{"host","port","url","pid"}`；正常退出时删除 |
+| 首次启动 | bind 成功后延迟 ~1.5s 再 `webbrowser.open(url)`（与二次启动共用同一 `url` 字段） |
+
+`endpoint.json` 与 `service.lock` 同目录：`.run/service/`。
+
+### `runtime.py` API (minimum)
+
+Implement in `<svc>/runtime.py` (reference: shuangwei `sww_service/runtime.py`):
+
+- `project_root()` — dev 用仓库根；`sys.frozen` 时用 `Path(sys.executable).parent`
+- `SingleInstanceLock(lock_path).try_acquire() -> bool` — 非阻塞；失败表示已有实例
+- `find_available_port(host, start_port, max_tries=50) -> int`
+- `open_existing_ui(endpoint_path, *, no_browser: bool) -> None` — 读 `url` 并 `webbrowser.open`
+- `write_endpoint_meta(path, host, port) -> None` / `clear_endpoint_meta(path) -> None`
+
+锁实现：POSIX `fcntl.flock`，Windows `msvcrt.locking`。
+
+### Skeleton
+
 ```python
-from sww_service.runtime import SingleInstanceLock, find_available_port, project_root
-import uvicorn, webbrowser, argparse, threading, time
+import argparse, json, os, threading, time, uvicorn, webbrowser
 from pathlib import Path
+from <svc>.runtime import (
+    SingleInstanceLock, find_available_port, project_root,
+    open_existing_ui, write_endpoint_meta, clear_endpoint_meta,
+)
 
 def main():
     p = argparse.ArgumentParser()
@@ -256,22 +286,41 @@ def main():
     p.add_argument("--no-browser", action="store_true")
     args = p.parse_args()
 
-    lock_path = project_root() / ".run" / "service" / "service.lock"
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with SingleInstanceLock(lock_path):
-        port = find_available_port(args.host, args.port)
+    root = project_root()
+    svc_dir = root / ".run" / "service"
+    svc_dir.mkdir(parents=True, exist_ok=True)
+    lock_path = svc_dir / "service.lock"
+    endpoint_path = svc_dir / "endpoint.json"
+
+    lock = SingleInstanceLock(lock_path)
+    if not lock.try_acquire():
+        open_existing_ui(endpoint_path, no_browser=args.no_browser)
+        return 0
+
+    port = find_available_port(args.host, args.port)
+    url = f"http://{args.host}:{port}"
+    write_endpoint_meta(endpoint_path, args.host, port)
+
+    try:
         if not args.no_browser:
             def _open():
                 time.sleep(1.5)
-                webbrowser.open(f"http://{args.host}:{port}")
+                webbrowser.open(url)
             threading.Thread(target=_open, daemon=True).start()
         uvicorn.run("<svc>.web.app:app", host=args.host, port=port, log_level="info")
+    finally:
+        clear_endpoint_meta(endpoint_path)
+        lock.release()
 
 if __name__ == "__main__":
     main()
 ```
 
-`SingleInstanceLock` uses fcntl on POSIX, msvcrt on Windows. Reference impl in shuangwei `sww_service/runtime.py`.
+### Acceptance (manual)
+
+1. `./start.sh` → 浏览器打开控制台，终端有 uvicorn 日志。
+2. **不关闭第一次**，再双击 `start.sh` 或再运行打包 exe → **只打开浏览器**，不新增进程、不报错弹窗。
+3. 把默认端口占满后启动 → 服务监听 `17866` 等，`endpoint.json` 的 `url` 与实际一致。
 
 ## End-of-phase Report
 
@@ -279,7 +328,8 @@ if __name__ == "__main__":
 2. Web UI URL (e.g. `http://127.0.0.1:17865`).
 3. One end-to-end test: add the test account via UI, watch it move queued → running → waiting_apply → completed; on a failed account, verify **复制日志** copies `error_log_text`.
 4. Export xlsx → confirm A–J headers match template; K+ are appended system columns.
-5. Ask: "OK to enter phase 6 (one-click start + single-file build)?"
+5. **二次启动**：服务运行中再执行 `python run_service.py` → 仅打开浏览器，进程数不增加。
+6. Ask: "OK to enter phase 6 (one-click start + single-file build)?"
 
 ## Pitfalls
 

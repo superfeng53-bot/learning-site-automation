@@ -29,7 +29,20 @@
 | Web | FastAPI + Uvicorn，单页 HTML 内联 CSS/JS |
 | 申请侧 | `ApplyWorker` 在每次 tick 中独立消费申请队列 |
 
-### 2.2 技术栈
+### 2.2 部署与启动（固定）
+
+| 项 | 要求 |
+|----|------|
+| 一键启动 | `start.sh` / `start.bat` 或打包 exe 双击即可，无需手动装依赖 |
+| 单实例 | 同目录只允许一个服务进程（`service.lock`） |
+| 二次启动 | 服务已运行时再次启动 → **只打开浏览器**到已有控制台，不启第二个进程 |
+| 端口 | 默认 `17865`；占用时自动递增避让；实际 URL 写入 `.run/service/endpoint.json` |
+| 打包 | PyInstaller **单文件**；`console=True` 保留终端日志；命名 `{平台中文名}_{日}_{月}`，如 `双卫网_27_05.exe` |
+| 可移植 | 单文件复制到其他电脑/目录即可运行；`data/`、`.run/` 与 exe 同目录 |
+
+详见 `phase5-service.md`（Service Entry）与 `phase6-packaging.md`。
+
+### 2.3 技术栈
 
 ```
 Python 3.9+ / FastAPI / Uvicorn / Pydantic / SQLite WAL
@@ -244,6 +257,7 @@ zoneinfo / openpyxl / ddddocr / pycryptodome
 - [ ] 崩溃恢复不打死账号
 - [ ] Web：总览、列表、筛选、展开详情、操作、定时刷新
 - [ ] 导入去重、导出、模板下载
+- [ ] 一键启动、单实例、二次启动只开 WebUI、端口避让、打包单文件与 `{平台}_{日}_{月}` 命名
 
 ---
 

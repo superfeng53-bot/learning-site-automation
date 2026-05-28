@@ -28,7 +28,7 @@ If any of (1)-(4) is missing, ask the user **once** with `AskQuestion` before in
 | 3 | Session reuse, error classification, retry policy | `session_manager.py`, `responses.py`, `captcha_limiter.py` | `phase3-stability.md` |
 | 4 | End-to-end single-account runner | `course_runner.py` + `run_course.py` entry | `phase4-end-to-end.md` |
 | 5 | Multi-account SQLite scheduler + FastAPI web console | `<svc>/orchestrator.py`, `worker.py`, `apply_worker.py`, `web/app.py` | `phase5-service.md` |
-| 6 | One-click start, single-file build, CI | `start.sh`, `build.sh`, `scripts/build.py`, `.github/workflows/ci.yml` | `phase6-packaging.md` |
+| 6 | One-click start, single-instance (+ reopen WebUI on relaunch), port fallback, single-file build (`{平台}_{DD}_{MM}`, console logs), CI | `start.sh`, `build.sh`, `scripts/build.py`, `.github/workflows/ci.yml` | `phase6-packaging.md` |
 
 ## Hard Workflow Rules
 
@@ -128,6 +128,7 @@ These apply to every generated project unless the user explicitly opts out:
 | Excel 模板 | 文件名 `{平台}账号模板.xlsx`；sheet/表头中文；见 `excel-spec.md` §2 |
 | Excel 导出 | 前部列与导入模板完全一致；状态/日志等追加在后；见 `excel-spec.md` §3 |
 | 复制日志 | 失败/重试账号一键复制 `error_log_text`；见 `web-ui-spec.md` §4.12 + `excel-spec.md` §4 |
+| 启动与打包 | 一键启动、单实例、二次启动只开 WebUI、端口避让、单文件 PyInstaller、`{平台}_{日}_{月}` 命名、`console=True`；见 `phase5-service.md` + `phase6-packaging.md` |
 
 ## Captcha Decision Tree (site-specific tweak point)
 
