@@ -12,12 +12,12 @@ Goal: wrap each business endpoint the site exposes (course listing, joining, vid
 
 ## Discovery Loop (repeat for each domain)
 
-**Cursor 编排**：每个 domain 单独一轮——先 `Task explore` + browser MCP → `docs/api-discovery/<domain>.md`，再 `Task generalPurpose` 实现 `*Service`。每完成 **2 个 domain** 写 `docs/handoffs/PHASE2_<domains>_done.md` 并建议用户 **New Chat**。详见 `cursor-agent-playbook.md` §3。
+**Cursor 编排**：每个 domain 单独一轮——先用 **`cursor-ide-browser` MCP**（内置浏览器，playbook §1.1）+ `Task explore` 或 `api-recon` subagent → `docs/api-discovery/<domain>.md`，再 `Task generalPurpose` 实现 `*Service`。每完成 **2 个 domain** 写 `docs/handoffs/PHASE2_<domains>_done.md` 并建议用户 **New Chat**。详见 playbook §3、§5。
 
-1. **Browse with the test account** using `cursor-ide-browser`, perform the action manually
+1. **Browse with the test account** using **`cursor-ide-browser` MCP** (not external automation), perform the action manually
 2. Capture the network calls via `browser_cdp Network.enable` and `Network.requestWillBeSent` / `responseReceived`. Use `Network.getResponseBody` for response shapes you cannot read from the snapshot
 3. Note: request body (form vs JSON), required headers, response codes
-4. Write a tiny script that hits the same endpoint with the saved cookies
+4. After browser recon is written to `docs/api-discovery/<domain>.md`, optionally use **`shell` skill** / a tiny `curl` script with `data/cookies.json` to confirm parity (do not use this step to *discover* endpoints)
 5. Confirm parity with browser behaviour
 6. Promote the script into a service method
 

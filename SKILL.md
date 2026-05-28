@@ -51,7 +51,7 @@ If any of (1)-(4) is missing, ask the user **once** with `AskQuestion` before in
 | Phase 5 backend → UI | New Chat before generating `index.html` |
 | Mid-phase pressure | Read >8 files OR >15 edits OR one file >600 LOC → stop & handoff |
 
-**Phase 1–2 analysis:** use **`Task` sub-agents** + **`cursor-ide-browser` MCP** for site/API recon; parent agent merges into `docs/LOGIN_FLOW.md` / `API_REFERENCE.md`. See playbook §3.
+**Phase 1–2 analysis (Cursor 内):** **必须**用 MCP **`cursor-ide-browser`**（Cursor 内置浏览器）做现场解析；可叠 **`Task` explore** 或项目 **`api-recon` subagent**（见 playbook §1.1、§3、§5）。browser 定稿后可 Read **`shell` skill** 做 HTTP 对照。父 agent 合并进 `docs/LOGIN_FLOW.md` / `API_REFERENCE.md`。多站点可选 **`create-rule`** / **`memory-merger`**。
 
 **Phase 5:** Web UI per **`web-ui-spec.md`** (简体中文 + 复制日志); Excel per **`excel-spec.md`** + **`spreadsheet` skill**.
 
@@ -149,7 +149,8 @@ At most three times across the whole run:
 
 ## Anti-Patterns to Avoid
 
-- Do NOT use Selenium/Playwright at runtime (browser MCP = recon only)
+- Do NOT use Selenium/Playwright at runtime or for recon (in Cursor, use **`cursor-ide-browser` MCP** only for phase 1–2 site parsing; see playbook §1.1)
+- Do NOT use WebFetch/curl to *discover* login or API endpoints before built-in browser recon is documented in `docs/`
 - Do NOT finish phases 1–5 in one chat without handoff files
 - Do NOT paste large browser JSON into chat — write `docs/` files
 - Do NOT use English UI labels or English Excel headers
@@ -159,11 +160,12 @@ At most three times across the whole run:
 
 ## Auxiliary Resources In This Skill
 
-- `cursor-agent-playbook.md` — **Cursor orchestration**: context handoff, New Chat, sub-agents, MCP, other skills
+- `cursor-agent-playbook.md` — **Cursor orchestration**: built-in browser first (§1.1), handoff, sub-agents, parsing skill combos (§5)
 - `web-ui-spec.md` — phase-5 web console (中文 UI, 复制日志, no HTML template)
 - `excel-spec.md` — 中文模板/导出列对齐, `error_log_text`
 - `phase1-login-recon.md` … `phase6-packaging.md` — per-phase detail (read only when entering that phase)
 - `templates/requirements.md`, `templates/account.json`, `templates/project-skeleton.md`
+- `templates/agents/api-recon.md` + `templates/api-recon-agent.md`（安装说明；复制前者到 `.cursor/agents/api-recon.md`）
 - `scripts/init_project.py`, `scripts/captcha_probe.py`
 
 Read phase files and specs **only when entering that phase/sub-task**. Do not preload everything.

@@ -29,9 +29,9 @@ If `<pkg_name>` is unclear, derive from the site: e.g. `www.sww.com.cn` → `sww
 
 ## Step 2 — Browser reconnaissance (mcp `cursor-ide-browser`)
 
-Use the **cursor-ide-browser** MCP, not Playwright/Selenium. The browser is a forensics tool, not a runtime.
+在 **Cursor** 中执行时，**必须**使用 MCP **`cursor-ide-browser`**（Cursor 内置浏览器工具），不要用 Playwright/Selenium/WebFetch 做现场解析。浏览器仅用于侦察，不进 runtime。硬规则见 `cursor-agent-playbook.md` **§1.1**。
 
-**Cursor 编排（推荐）**：本步可派 **`Task` + `explore`** 子 agent 专职 browser 侦察；父 agent 只审阅产出。详见 `cursor-agent-playbook.md` §3。子 agent **只写** `docs/LOGIN_FLOW.draft.md`，不写 `login.py`。侦察结束写 mid-phase handoff 或等 phase 1 结束再写 `docs/handoffs/PHASE1_*.md`。
+**Cursor 编排（推荐）**：本步可派 **`Task` + `explore`** 或项目 **`.cursor/agents/api-recon`** 专职 browser 侦察；子 agent prompt 须写明「只用 `cursor-ide-browser`」。父 agent 只审阅产出。详见 playbook §3。子 agent **只写** `docs/LOGIN_FLOW.draft.md`，不写 `login.py`。调用 MCP 前先 **Read** `mcps/cursor-ide-browser/tools/*.json`。侦察结束写 mid-phase handoff 或等 phase 1 结束再写 `docs/handoffs/PHASE1_*.md`。
 
 Workflow:
 

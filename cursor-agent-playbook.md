@@ -7,14 +7,33 @@
 
 ## 1. Cursor 工具体系（按阶段选用）
 
+### 1.1 站点解析：必须用 Cursor 内置浏览器（硬规则）
+
+在 **Cursor IDE / Cursor Agent** 中执行本 skill 时，Phase 1–2 的**所有现场解析**（打开页面、点表单、走业务流、看 Network、读 cookie/localStorage）**一律优先且默认使用** MCP **`cursor-ide-browser`**（Cursor 内置浏览器工具），**不要**用下列替代做侦察：
+
+- ❌ Playwright / Selenium / Puppeteer 脚本（runtime 与侦察均禁止，见 `SKILL.md` Anti-Patterns）
+- ❌ 让用户手动开 Chrome DevTools 口述请求（除非内置浏览器不可用，见下）
+- ❌ `WebFetch` / 纯 `curl` 猜登录页与 AJAX（仅可在 **browser 已产出 endpoint 样本之后** 做 HTTP 对照，见 §5 `shell`）
+
+**调用前**：`Read` 项目内 `mcps/cursor-ide-browser/tools/*.json`（或当前工作区 MCP 描述目录），按 schema 调用；典型顺序见 `phase1-login-recon.md` Step 2：`browser_navigate` → `browser_lock` → `browser_snapshot` / `browser_fill` / `browser_click` → `browser_cdp`（`Network.enable`、`Runtime.evaluate` 等）→ `browser_lock` unlock。
+
+**子 agent 侦察**：派 `Task explore` 或项目级 `api-recon` subagent 时，prompt 里**必须写明**「用 `cursor-ide-browser` MCP，禁止外部浏览器自动化」。
+
+**仅当内置浏览器不可用**（MCP 未启用、页面需企业证书/特殊插件、用户明确指定外部环境）时：停止 improvising，向用户说明阻塞项，并改用手动抓包 + 用户提供的 HAR/请求样本写入 `docs/`；仍不得把 Playwright 写进 `<pkg>/` runtime。
+
+### 1.2 按阶段工具表
+
 | 阶段 | 首选工具 | 用途 |
 |------|----------|------|
-| Phase 1 登录侦察 | **`cursor-ide-browser` MCP** | 打开登录页、抓 Network、读 cookie/localStorage |
-| Phase 1 登录侦察 | **`Task` + `subagent_type=explore`** | 只读梳理页面结构、已有代码、失败码草稿 |
+| Phase 1 登录侦察 | **`cursor-ide-browser` MCP**（§1.1） | 打开登录页、抓 Network、读 cookie/localStorage |
+| Phase 1 登录侦察 | **`Task` + `subagent_type=explore`** 或 **`.cursor/agents/api-recon`** | 只读梳理页面结构；产出 draft md（须走内置浏览器） |
 | Phase 1 实现 | **`Task` + `subagent_type=generalPurpose`** | 独立实现 `captcha.py` / `login.py`（输入：侦察摘要文件） |
-| Phase 2 API 发现 | **`cursor-ide-browser` MCP** | 手动走一遍业务流，抓每个 domain 的请求 |
+| Phase 2 API 发现 | **`cursor-ide-browser` MCP**（§1.1） | 手动走一遍业务流，抓每个 domain 的请求 |
 | Phase 2 API 发现 | **`Task` + `explore`**（并行） | 每个业务域一份 `docs/api-discovery/<domain>.md` 草稿 |
+| Phase 2 HTTP 对照 | **`shell` skill**（可选） | browser 定稿后用 `curl`/小脚本对照 cookie 与响应 |
 | Phase 2 实现 | **`Task` + `generalPurpose`**（并行） | 每个 domain 一个 `*Service` + `cli_*.py` |
+| Phase 2 结束 / 多站点 | **`create-rule`** + **`memory-merger`** | 项目规则沉淀解析约定；workspace 级记忆合并 |
+| 复杂登录/API 时序 | **`canvas` skill**（可选） | 交互式流程图，辅助审阅（结论仍写入 `docs/`） |
 | Phase 5 Excel | **`spreadsheet` skill**（`~/.agents/skills/spreadsheet/SKILL.md`） | 生成/校验中文模板 xlsx、导出列顺序 |
 | Phase 5 Web UI | **`Task` + `generalPurpose`** | 按 `web-ui-spec.md` 生成 `index.html` |
 | 任意阶段边界 | **`rename_chat`** MCP | 把对话标题改成 `Phase N · <站点名> · <状态>`，方便用户找 handoff 点 |
@@ -116,7 +135,8 @@ Handoff 模板（固定 8 段，每段 1–5 行，**禁止粘贴大段代码**�
 登录 URL：<url>
 测试账号：见 data/account.json（勿在回复里复述密码）
 
-用 cursor-ide-browser MCP 完成 phase1-login-recon.md Step 2。
+在 Cursor 中必须用 cursor-ide-browser MCP（内置浏览器）完成 phase1-login-recon.md Step 2。
+禁止 Playwright/Selenium/WebFetch 替代现场解析。调用 MCP 前先 Read mcps/cursor-ide-browser 工具 schema。
 把结论写入 docs/LOGIN_FLOW.draft.md，结构同 LOGIN_FLOW.md 七章。
 不要写 login.py。回复只给：draft 路径 + captcha 族判断 + 阻塞项。
 ```
@@ -132,6 +152,37 @@ Handoff 模板（固定 8 段，每段 1–5 行，**禁止粘贴大段代码**�
 **每完成 2 个 domain** → 写 `docs/handoffs/PHASE2_<domains>_done.md`，建议用户新开会话。
 
 Phase 2 侦察子 agent **不要**一次包「全部 6 个 domain」；一次最多 **1–2 个 domain**。
+
+**Phase 2 侦察子 agent 提示词骨架**（复制改写）：
+
+```
+你是 learning-site-automation Phase 2 API 侦察子任务（domain: <course|study|exam|…>）。
+项目根：<abs_path>
+已登录 cookie：见 data/cookies.json（勿在回复里复述）
+
+在 Cursor 中必须用 cursor-ide-browser MCP 走一遍该 domain 的业务操作并抓 Network。
+禁止 Playwright/Selenium；禁止未走 browser 就用 WebFetch/curl 编造 endpoint。
+调用 MCP 前先 Read mcps/cursor-ide-browser 工具 schema。
+把结论写入 docs/api-discovery/<domain>.md（method、path、body、响应样本、失败码）。
+不要写 *Service 代码。回复只给：md 路径 + 阻塞项 + 一条建议的 curl 对照命令（可选）。
+```
+
+### 3.1 解析增强流水线（Cursor 内推荐顺序）
+
+Phase 1–2 在 Cursor 中执行时，按此顺序叠工具与 skill（结论始终落盘到 `docs/`）：
+
+```
+cursor-ide-browser（内置浏览器，§1.1）
+    → Task explore 或 .cursor/agents/api-recon（可选，须写明用内置浏览器）
+    → docs/LOGIN_FLOW.draft.md / docs/api-discovery/<domain>.md
+    → shell skill：curl/小脚本对照（仅验证，不替代 browser 发现）
+    → 父 agent 合并 → API_REFERENCE.md / LOGIN_FLOW.md
+    → create-rule（项目内解析约定，可选）
+    → memory-merger（多站点/workspace 沉淀，可选）
+    → Task generalPurpose 实现 login.py / *Service
+```
+
+复杂 SSO 或多步 captcha 时，可 Read **`canvas` skill** 画时序图辅助审阅；**仍以 `docs/` 文字为权威**。
 
 ---
 
@@ -149,16 +200,51 @@ Phase 2 侦察子 agent **不要**一次包「全部 6 个 domain」；一次最
 
 ---
 
-## 5. 与其他 skill 的协作方式
+## 5. 与其他 skill / MCP 的协作方式
 
-调用方式：**先 `Read` 对应 `SKILL.md`，再执行**；不要把 spreadsheet 的流程写进本仓库代码注释里。
+**总则（Cursor 执行环境）**
+
+1. **站点现场解析**：MCP **`cursor-ide-browser`**（Cursor 内置浏览器）为默认且首选，见 §1.1。  
+2. **调用任何外部 skill**：**先 `Read` 其 `SKILL.md`，再执行**；不要把各 skill 的全文流程写进业务仓库注释。  
+3. **子 agent 与 skill 分工**：browser 侦察可派 `Task` 或项目 subagent；**实现** `login.py` / `*Service` 用 `generalPurpose`；**不要**用 `shell` / `WebFetch` 替代 browser 做「第一次」发现 endpoint。
+
+### 5.1 Phase 1–2 解析与分析（优先组合）
+
+| 工具 / skill | 路径提示 | 何时用 | 用途 |
+|--------------|----------|--------|------|
+| **`cursor-ide-browser` MCP** | 工作区 `mcps/cursor-ide-browser/tools/*.json` | Phase 1–2 全程 | 登录页、业务流、Network、cookie/localStorage（**必用**） |
+| **`Task` + `explore`** | Cursor 内置 | 每轮侦察 | 产出 `LOGIN_FLOW.draft.md`、`api-discovery/<domain>.md` |
+| **`create-subagent`** | `~/.cursor/skills-cursor/create-subagent/SKILL.md` | 多站点/长期项目 | 创建 `.cursor/agents/api-recon.md`，固定「只用内置浏览器、只写 docs、每轮 ≤2 domain」 |
+| **`shell`** | `~/.cursor/skills-cursor/shell/SKILL.md` | browser 定稿后 | `curl`/小脚本对照 endpoint 与 `data/cookies.json`，不用于猜接口 |
+| **`create-rule`** | `~/.cursor/skills-cursor/create-rule/SKILL.md` | Phase 2 结束或第二站点起 | `.cursor/rules/` 沉淀：响应字段、失败码表、禁止贴大 JSON 进聊天 |
+| **`memory-merger`** | `~/.agents/skills/memory-merger/SKILL.md` | 多站点成熟后 | 把 workspace `*-memory.instructions.md` 合并进站点解析说明 |
+| **`canvas`** | `~/.cursor/skills-cursor/canvas/SKILL.md` | 流程复杂时（可选） | 登录/captcha/SSO 时序可视化；结论仍写入 `docs/` |
+
+**`api-recon` 子 agent**：复制模板到项目或用户 agents 目录：
+
+```bash
+mkdir -p <project_root>/.cursor/agents
+cp ~/.cursor/skills/learning-site-automation/templates/agents/api-recon.md \
+   <project_root>/.cursor/agents/api-recon.md
+```
+
+安装说明见 `templates/api-recon-agent.md`；也可用 **`create-subagent`** skill 按需微调。
+
+### 5.2 Phase 5 及之后（非 HTTP 解析）
 
 | 外部 skill | 何时 Read | 本 skill 中的用途 |
 |------------|-----------|-------------------|
-| `spreadsheet` | Phase 5 做 xlsx 模板/导出 | 中文表头、列宽、说明 sheet |
-| `xlsx-manipulation` | 仅需 openpyxl 细粒度改 cell 时 | 可选，spreadsheet 优先 |
+| `spreadsheet` | Phase 5 做 xlsx 模板/导出 | 中文表头、列宽、说明 sheet（`excel-spec.md`） |
+| `xlsx-manipulation` | 仅需 openpyxl 细改 cell 时 | 可选，`spreadsheet` 优先 |
+| `excel-automation` | 需 Office MCP 复杂宏时 | 一般不需要；HTTP 项目优先 `spreadsheet` |
 
-MCP **`cursor-ide-browser`**：phase 1–2 专用；调用前 Read `mcps/cursor-ide-browser` 工具 schema（项目内 MCP 描述目录）。
+### 5.3 不建议用于站点解析的 skill
+
+| skill | 原因 |
+|-------|------|
+| `sdk` | Cursor Agent API/CI，非抓站 |
+| `loop` | 轮询运行状态，非一次性侦察 |
+| `WebFetch`（工具） | 无法执行登录交互、captcha、XHR；仅适合静态页，**不能**替代 §1.1 |
 
 ---
 
@@ -180,6 +266,8 @@ MCP **`cursor-ide-browser`**：phase 1–2 专用；调用前 Read `mcps/cursor-
 ## 7. Anti-patterns（Cursor 特有）
 
 - ❌ 在同一对话里从 Phase 1 扫到 Phase 5  
+- ❌ Phase 1–2 不用 **`cursor-ide-browser`**，改用 Playwright/Selenium/让用户手抄 DevTools（除非 §1.1 阻塞并已说明）  
+- ❌ 未走内置 browser 就用 `WebFetch` / `curl` **发现**登录或业务 API（对照验证除外）  
 - ❌ 子 agent 返回整页 HTML/JSON 样本到聊天（应写文件）  
 - ❌ 未写 handoff 就让用户「自己记得」  
 - ❌ Phase 5 未读 `web-ui-spec.md` / `excel-spec.md` 就开始写 UI 或 xlsx  

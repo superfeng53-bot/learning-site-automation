@@ -7,12 +7,12 @@
 | 路径 | 说明 |
 |------|------|
 | `SKILL.md` | 技能入口、Cursor 编排（`cursor-agent-playbook.md`）、六阶段总览 |
-| `cursor-agent-playbook.md` | 上下文 handoff、New Chat 时机、子 agent/MCP/其他 skill 调用 |
+| `cursor-agent-playbook.md` | 内置浏览器优先（§1.1）、handoff、子 agent、解析用 skill 组合（§5） |
 | `web-ui-spec.md` | Phase 5 Web 控制台规格（**简体中文**、复制日志、无 HTML 模板） |
 | `excel-spec.md` | 中文 Excel 模板/导出列对齐、`error_log_text` |
 | `phase1-login-recon.md` … `phase6-packaging.md` | 各阶段操作细则与验收清单 |
 | `scripts/` | `init_project.py`、`captcha_probe.py` |
-| `templates/` | 需求模板、账号 JSON、项目骨架描述 |
+| `templates/` | 需求模板、账号 JSON、项目骨架；`agents/api-recon.md` → `.cursor/agents/` |
 
 ## 安装
 
