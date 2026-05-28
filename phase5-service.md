@@ -9,9 +9,9 @@ Goal: turn the single-account runner into a long-running scheduler that drives m
 - [ ] `<svc>/apply_worker.py` `ApplyWorker.process_one(now)` consumes the apply queue independently
 - [ ] `<svc>/orchestrator.py` ticks every N seconds, claims queued accounts under a concurrency limit
 - [ ] `<svc>/web/app.py` FastAPI serves the console + `/api/*` endpoints matching `web-ui-spec.md` §8 and `excel-spec.md`
-- [ ] `<svc>/web/templates/index.html` generated strictly per `web-ui-spec.md` (简体中文, 复制日志, single file, ≤ 1200 LOC)
+- [ ] `<svc>/web/templates/index.html` generated strictly per `web-ui-spec.md` (简体中文, 复制日志, single file, ≤ 1600 LOC)
 - [ ] `<svc>/web/excel_io.py` (or equivalent) implements import/export per `excel-spec.md` (中文文件名/表头, 导出列对齐)
-- [ ] All items in `web-ui-spec.md` §10 and `excel-spec.md` §6 verification checklists pass
+- [ ] All items in `web-ui-spec.md` §12–§13 and `excel-spec.md` §6 verification checklists pass
 - [ ] `run_service.py` at project root: single-instance lock + **二次启动只打开已有 WebUI** + port avoidance + auto-open browser
 - [ ] `<svc>/runtime.py` writes `.run/service/endpoint.json` while running; second process reads it and exits after `webbrowser.open`
 - [ ] Crash recovery: restarting the service requeues `running` accounts and `in_flight` apply tasks
@@ -195,7 +195,7 @@ The console is **specified, not templated**: read **`web-ui-spec.md`** and gener
 
 - **界面语言：简体中文**（`lang="zh-CN"`，所有按钮/表头/toast/confirm）
 - **复制日志**：失败/重试账号提供「复制日志」按钮，内容 = API 字段 `error_log_text`（格式见 `excel-spec.md` §4）
-- 零外链、vanilla JS、inline SVG、≤1200 LOC
+- 零外链、vanilla JS、inline SVG、≤1600 LOC
 - 完整组件/交互/验收见 `web-ui-spec.md`
 
 **Recommended split** (see `cursor-agent-playbook.md` §4): dedicated sub-agent for `index.html`; parent integrates into FastAPI route.
