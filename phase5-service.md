@@ -8,8 +8,10 @@ Goal: turn the single-account runner into a long-running scheduler that drives m
 - [ ] `<svc>/worker.py` `AccountWorker.run_once(account)` runs the full single-account pipeline
 - [ ] `<svc>/apply_worker.py` `ApplyWorker.process_one(now)` consumes the apply queue independently
 - [ ] `<svc>/orchestrator.py` ticks every N seconds, claims queued accounts under a concurrency limit
-- [ ] `<svc>/web/app.py` FastAPI serves the console + `/api/*` endpoints
-- [ ] `<svc>/web/templates/index.html` single-page console with inlined CSS/JS, no third-party UI libs
+- [ ] `<svc>/web/app.py` FastAPI serves the console + `/api/*` endpoints matching `web-ui-spec.md` §8 and `excel-spec.md`
+- [ ] `<svc>/web/templates/index.html` generated strictly per `web-ui-spec.md` (简体中文, 复制日志, single file, ≤ 1200 LOC)
+- [ ] `<svc>/web/excel_io.py` (or equivalent) implements import/export per `excel-spec.md` (中文文件名/表头, 导出列对齐)
+- [ ] All items in `web-ui-spec.md` §10 and `excel-spec.md` §6 verification checklists pass
 - [ ] `run_service.py` at project root: single-instance lock + port avoidance + auto-open browser
 - [ ] Crash recovery: restarting the service requeues `running` accounts and `in_flight` apply tasks
 
@@ -184,17 +186,31 @@ UPDATE apply_queue SET status='pending' WHERE status='in_flight';
 
 Change per site as needed but keep them as constants in `<svc>/config.py`. Do not expose to UI unless the user asks for it.
 
-## Web Console — minimum-viable layout
+## Web Console — strict spec, no template
 
-Use the template at `templates/web-ui-template.html` (single file, inlined CSS + vanilla JS, polls `/api/stats` and `/api/accounts` every 5s). Required pieces:
+The console is **specified, not templated**: read **`web-ui-spec.md`** and generate `<svc>/web/templates/index.html` yourself.
 
-- Top bar: title, status badge, concurrency input, pause/resume, template download, export, AI config
-- Stat tiles: total / queued / running / waiting_apply / completed / failed / active workers
-- Add-account form: name / username / password / requirement-1 / credits-1 / requirement-2 / credits-2 / optional card-no / card-pw
-- Excel upload
-- Account list (search, status pill filter, date range, paging)
-- Expandable detail row: course table, apply queue, credit applications, run history, AI mapping results
-- Per-row actions: requeue / top / edit / clear-token / reset / delete
+**固定要求（不可省略）**：
+
+- **界面语言：简体中文**（`lang="zh-CN"`，所有按钮/表头/toast/confirm）
+- **复制日志**：失败/重试账号提供「复制日志」按钮，内容 = API 字段 `error_log_text`（格式见 `excel-spec.md` §4）
+- 零外链、vanilla JS、inline SVG、≤1200 LOC
+- 完整组件/交互/验收见 `web-ui-spec.md`
+
+**Recommended split** (see `cursor-agent-playbook.md` §4): dedicated sub-agent for `index.html`; parent integrates into FastAPI route.
+
+## Excel Import / Export
+
+Read **`excel-spec.md`** before implementing. When generating xlsx, also Read the **`spreadsheet` skill** (`~/.agents/skills/spreadsheet/SKILL.md`).
+
+Summary:
+
+- Template: `{平台中文名}账号模板.xlsx`, sheets `账号列表` + `填写说明`, headers `姓名/账号/密码/学科1/学分1/…` (all Chinese)
+- Export: **same A–J columns as import**, then append `状态/说明/重试次数/创建时间/更新时间/最近运行结果/错误日志`
+- Import: Chinese headers only; export file must be re-importable (ignore trailing columns)
+- Backend exposes `error_log_text` on list (failed/retrying) and detail APIs for UI copy button
+
+Do **not** duplicate column rules here — `excel-spec.md` is authoritative.
 
 ## FastAPI Endpoints (canonical surface)
 
@@ -257,21 +273,12 @@ if __name__ == "__main__":
 
 `SingleInstanceLock` uses fcntl on POSIX, msvcrt on Windows. Reference impl in shuangwei `sww_service/runtime.py`.
 
-## Excel Import / Export
-
-- File name: `<site>账号模板.xlsx` (e.g. `医博士账号模板.xlsx`)
-- Sheet 1: `账号列表` with Chinese headers `姓名 / 账号 / 密码 / 学科1 / 学分1 / 学科2 / 学分2 / 卡号 / 卡号密码 / 备注`
-- Sheet 2: `填写说明` — short guide
-- Export adds columns: `状态 / 说明 / 重试次数 / 创建时间`
-
-Only recognize Chinese headers in import — defensive against column reorder.
-
 ## End-of-phase Report
 
 1. SQLite tables created, row counts.
 2. Web UI URL (e.g. `http://127.0.0.1:17865`).
-3. One end-to-end test: add the test account via UI, watch it move queued → running → waiting_apply → completed.
-4. Files added/changed.
+3. One end-to-end test: add the test account via UI, watch it move queued → running → waiting_apply → completed; on a failed account, verify **复制日志** copies `error_log_text`.
+4. Export xlsx → confirm A–J headers match template; K+ are appended system columns.
 5. Ask: "OK to enter phase 6 (one-click start + single-file build)?"
 
 ## Pitfalls

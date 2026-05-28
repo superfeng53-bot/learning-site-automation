@@ -12,6 +12,8 @@ Goal: wrap each business endpoint the site exposes (course listing, joining, vid
 
 ## Discovery Loop (repeat for each domain)
 
+**Cursor 编排**：每个 domain 单独一轮——先 `Task explore` + browser MCP → `docs/api-discovery/<domain>.md`，再 `Task generalPurpose` 实现 `*Service`。每完成 **2 个 domain** 写 `docs/handoffs/PHASE2_<domains>_done.md` 并建议用户 **New Chat**。详见 `cursor-agent-playbook.md` §3。
+
 1. **Browse with the test account** using `cursor-ide-browser`, perform the action manually
 2. Capture the network calls via `browser_cdp Network.enable` and `Network.requestWillBeSent` / `responseReceived`. Use `Network.getResponseBody` for response shapes you cannot read from the snapshot
 3. Note: request body (form vs JSON), required headers, response codes

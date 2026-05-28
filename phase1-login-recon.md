@@ -31,6 +31,8 @@ If `<pkg_name>` is unclear, derive from the site: e.g. `www.sww.com.cn` → `sww
 
 Use the **cursor-ide-browser** MCP, not Playwright/Selenium. The browser is a forensics tool, not a runtime.
 
+**Cursor 编排（推荐）**：本步可派 **`Task` + `explore`** 子 agent 专职 browser 侦察；父 agent 只审阅产出。详见 `cursor-agent-playbook.md` §3。子 agent **只写** `docs/LOGIN_FLOW.draft.md`，不写 `login.py`。侦察结束写 mid-phase handoff 或等 phase 1 结束再写 `docs/handoffs/PHASE1_*.md`。
+
 Workflow:
 
 1. `browser_navigate` to the login URL (omit `position` so user keeps focus)

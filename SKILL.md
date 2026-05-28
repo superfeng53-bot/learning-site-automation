@@ -37,93 +37,132 @@ If any of (1)-(4) is missing, ask the user **once** with `AskQuestion` before in
 3. **Do not skip phases** unless the user explicitly says so (e.g. "我只要 API 工具，不要常驻服务" → stop after phase 4).
 4. **Preserve site-specific knowledge in code, not in this skill**: every site differs in captcha kind, response shape, anti-bot tricks. The skill is a scaffold, not a copy-paste template.
 5. **Never commit the test account**: add `data/`, `.run/`, cookies, and account JSONs to `.gitignore` in phase 1.
+6. **Don't try to finish in one shot**: split work across phases + specs. **Read `cursor-agent-playbook.md`** before phase 1 for handoff files, New Chat boundaries, sub-agents, and other skill/MCP usage.
+
+## Cursor Agent Playbook (read before phase 1)
+
+**Full detail:** `cursor-agent-playbook.md`
+
+| When | Action |
+|------|--------|
+| End of each phase | Write `docs/handoffs/PHASE<N>_*.md`; offer user **New Chat** with「新对话启动语」 |
+| Phase 1 → 2 | Strongly suggest New Chat (browser capture bloat) |
+| Phase 2, every 2 domains | Mid-phase handoff + optional New Chat |
+| Phase 5 backend → UI | New Chat before generating `index.html` |
+| Mid-phase pressure | Read >8 files OR >15 edits OR one file >600 LOC → stop & handoff |
+
+**Phase 1–2 analysis:** use **`Task` sub-agents** + **`cursor-ide-browser` MCP** for site/API recon; parent agent merges into `docs/LOGIN_FLOW.md` / `API_REFERENCE.md`. See playbook §3.
+
+**Phase 5:** Web UI per **`web-ui-spec.md`** (简体中文 + 复制日志); Excel per **`excel-spec.md`** + **`spreadsheet` skill**.
+
+Use **`rename_chat`** MCP at phase boundaries: `Phase N · <站点> · <状态>`.
+
+## Context Budget & Sub-agent Strategy
+
+The whole flow is too big for one conversation. Follow `cursor-agent-playbook.md` for handoff file format and New Chat triggers. Summary:
+
+### When to compress / handoff (mandatory checkpoints)
+
+Stop and write `docs/handoffs/PHASE<N>_*.md` at the **end of every phase**. Also stop if you have read >8 files, made >15 edits, one file >600 LOC, or are switching to a new sub-task with its own DoD.
+
+### When to delegate to a sub-agent (recommended split points)
+
+Use `Task` with `subagent_type=generalPurpose` or `explore`. Copy DoD from the phase file into the prompt.
+
+| Boundary | Why delegate | Sub-agent scope |
+|---|---|---|
+| Phase 1 browser recon | Heavy MCP output | Write `docs/LOGIN_FLOW.draft.md` via `cursor-ide-browser`; no login.py |
+| Phase 1 captcha + login | Finicky iteration | Implement `captcha.py` + `login.py` from draft path |
+| Phase 2 API discovery | Per-domain network dumps | One explore agent → `docs/api-discovery/<domain>.md` (max 2 domains each) |
+| Phase 2 service module | Parallel-friendly | One generalPurpose agent per `*Service` + `cli_*.py` |
+| Phase 5 web UI | Pure presentation | `index.html` per `web-ui-spec.md` + verification checklist |
+| Phase 5 FastAPI | After store stable | `web/app.py` per `web-ui-spec.md` §8 + `excel-spec.md` |
+| Phase 5 Excel | Formatting rules | Template/export xlsx under `spreadsheet` skill + `excel-spec.md` |
+| Phase 6 packaging | Platform quirks | `start.sh`, `build.sh`, PyInstaller spec |
+
+### What stays in the parent agent
+
+- `AskQuestion`, naming (`<pkg>`/`<svc>`), phase gates, smoke tests, handoff files
+- Integrating sub-agent outputs and re-running DoD
+- Final captcha-family decision after reviewing recon draft
+
+### Detail preservation under compression
+
+Never drop: endpoint paths, failure codes, captcha family, `<pkg>`/`<svc>` names, daily quotas, user's domain goal. Persist in `docs/LOGIN_FLOW.md`, `<pkg>/API_REFERENCE.md`, `<svc>/config.py`.
 
 ## Initial Project Layout (used from phase 1 onward)
 
 ```
 <project_root>/
 ├── <pkg>/                     # HTTP toolkit (login, captcha, services, CLIs)
-│   ├── __init__.py
-│   ├── client.py
-│   ├── captcha.py
-│   ├── login.py
-│   ├── session_manager.py
-│   ├── responses.py
-│   └── cli_*.py
 ├── <svc>/                     # Always-on service (phase 5+)
-│   ├── orchestrator.py
-│   ├── worker.py
-│   ├── apply_worker.py
-│   ├── persistence/store.py
 │   └── web/app.py + templates/index.html
 ├── docs/
 │   ├── LOGIN_FLOW.md          # produced in phase 1
-│   └── 通用需求说明.md          # adapted from templates/requirements.md
-├── data/                      # cookies, account JSON (gitignored)
-├── .run/                      # SQLite, locks, AI config (gitignored)
-├── scripts/                   # build / start helpers
-├── run_course.py              # single-account entry (phase 4)
-├── run_service.py             # service entry (phase 5)
-├── start.sh / start.bat       # phase 6
-├── build.sh / build.bat       # phase 6
-├── requirements.txt
-└── README.md
+│   ├── handoffs/              # PHASE<N>_*.md — Cursor context handoffs
+│   ├── api-discovery/         # phase 2 per-domain drafts (optional)
+│   └── 通用需求说明.md
+├── data/                      # gitignored
+├── .run/                      # gitignored
+├── run_course.py              # phase 4
+├── run_service.py             # phase 5
+└── ...
 ```
 
-Use `scripts/init_project.py` (inside this skill) to generate the empty skeleton + `.gitignore` + `requirements.txt` in one shot. See `phase1-login-recon.md` for the exact invocation.
-
-`<pkg>` and `<svc>` are placeholders — replace with concrete names derived from the site (e.g. `sww_api` + `sww_service` for 双卫网). Ask the user once if not obvious.
+Use `scripts/init_project.py` to scaffold. See `phase1-login-recon.md`.
 
 ## Canonical Tech Stack (battle-tested, do not deviate without reason)
 
-- Python 3.9+
-- `requests` for HTTP, `requests.Session` per user for cookie isolation
-- `ddddocr` for captcha (text-click / slider / char) — see phase 1 for which mode
-- `pycryptodome` for AES (most captchas need ECB+PKCS7 with a per-request `secretKey`)
-- `fastapi` + `uvicorn` + a single inlined `index.html` for the web console
-- `sqlite3` (WAL mode) for persistence — schema in `phase5-service.md`
-- `openpyxl` for Excel import/export
-- `pyinstaller` for single-file build
-- Optional: `zhipuai` / OpenAI-compatible LLM for any classification step (subject mapping, etc.)
+- Python 3.9+, `requests`, `ddddocr`, `pycryptodome`, `fastapi` + `uvicorn`
+- Single inlined **`index.html`** — **简体中文** UI per `web-ui-spec.md`
+- `sqlite3` (WAL), `openpyxl` — import/export per **`excel-spec.md`** (中文文件名与表头)
+- `pyinstaller`; optional LLM for subject mapping
+
+## Operator-facing Chinese requirements (fixed)
+
+These apply to every generated project unless the user explicitly opts out:
+
+| Surface | Rule |
+|---------|------|
+| Web 控制台 | 全部简体中文；见 `web-ui-spec.md` §0 |
+| Excel 模板 | 文件名 `{平台}账号模板.xlsx`；sheet/表头中文；见 `excel-spec.md` §2 |
+| Excel 导出 | 前部列与导入模板完全一致；状态/日志等追加在后；见 `excel-spec.md` §3 |
+| 复制日志 | 失败/重试账号一键复制 `error_log_text`；见 `web-ui-spec.md` §4.12 + `excel-spec.md` §4 |
 
 ## Captcha Decision Tree (site-specific tweak point)
 
-In phase 1, identify which family the site uses, then pick the matching helper in `scripts/captcha_probe.py`:
-
 | Site captcha kind | Detect by | Use |
 |-------------------|-----------|-----|
-| Click-word / point-touch (AJ-Captcha, NetEase Yidun-clickword) | `wordList` field, `/captcha/get` returning `originalImageBase64` | `ddddocr.DdddOcr(det=True)` for detection + `DdddOcr()` for OCR; AES-ECB on `(token---pointJson)` |
-| Slider (Yidun slide / Geetest3 slide) | `bg`/`tile` images, `track` data | `ddddocr.slide_match(target, background)` + humanized track curve |
-| Plain char OCR (4-6 letters/digits image) | a single `<img src="...captcha">` | `ddddocr.classification(img_bytes)` |
-| SMS / face / passkey | login response with `phoneFormat=1`, biometric prompt | **stop and ask the user** — out of scope for unattended automation |
-
-If you can't classify on first browser look, capture the captcha-related network call in phase 1 and paste it into chat before guessing.
+| Click-word / point-touch | `wordList`, `originalImageBase64` | `ddddocr` det + OCR; AES-ECB |
+| Slider | `bg`/`tile`, track | `ddddocr.slide_match` |
+| Plain char OCR | single captcha `<img>` | `ddddocr.classification` |
+| SMS / face / passkey | biometric / SMS gate | **stop and ask the user** |
 
 ## When to Call AskQuestion
 
-Use `AskQuestion` at most three times across the whole 6-phase run:
+At most three times across the whole run:
 
-1. At the very start if any of the 4 required inputs is missing.
-2. At end of phase 1 if captcha kind is ambiguous (show the 4 captcha-family options).
-3. At end of phase 4 to confirm: continue to phase 5 (always-on service) or stop here.
-
-Beyond those, just announce the phase boundary in chat and ask for a free-form confirm.
+1. Start — missing inputs (1)–(4)
+2. End of phase 1 — captcha kind ambiguous
+3. End of phase 4 — continue to phase 5 or stop
 
 ## Anti-Patterns to Avoid
 
-- Do NOT use Selenium/Playwright in the runtime. Browser is **only** for phase-1 reconnaissance. Production must be pure `requests`.
-- Do NOT hard-code one captcha solver path. Always wrap captcha in a class with retry + cooldown — see `phase3-stability.md` for `captcha_limiter` pattern.
-- Do NOT mix login retries with business retries. Login uses captcha-bounded retry; business calls use exponential backoff + session-expired detection.
-- Do NOT bake the test credentials anywhere outside `data/account.json` (and that file must be in `.gitignore`).
-- Do NOT generate emoji-laden UI text; the canonical console template uses plain Chinese labels.
+- Do NOT use Selenium/Playwright at runtime (browser MCP = recon only)
+- Do NOT finish phases 1–5 in one chat without handoff files
+- Do NOT paste large browser JSON into chat — write `docs/` files
+- Do NOT use English UI labels or English Excel headers
+- Do NOT reorder export columns relative to import template
+- Do NOT use emoji in UI text; use plain Chinese labels
+- Do NOT skip `ui.confirm` / `ui.toast` patterns in web UI
 
 ## Auxiliary Resources In This Skill
 
-- `templates/requirements.md` — generic "always-on service requirements" doc; adapt for the site in phase 5.
-- `templates/account.json` — minimal credentials JSON shape (also produced by `init_project.py`).
-- `templates/project-skeleton.md` — annotated tree of every file the bootstrap should produce.
-- `templates/web-ui-template.html` — minimum-viable FastAPI single-page console (no third-party UI libs).
-- `scripts/init_project.py` — one-shot scaffolder. Run: `python <skill>/scripts/init_project.py --root <project_root> --pkg <pkg_name> --svc <svc_name> --site-url <url>`.
-- `scripts/captcha_probe.py` — quick local helper: feed a captcha image bytes + kind, prints what ddddocr sees. Useful in phase 1.
+- `cursor-agent-playbook.md` — **Cursor orchestration**: context handoff, New Chat, sub-agents, MCP, other skills
+- `web-ui-spec.md` — phase-5 web console (中文 UI, 复制日志, no HTML template)
+- `excel-spec.md` — 中文模板/导出列对齐, `error_log_text`
+- `phase1-login-recon.md` … `phase6-packaging.md` — per-phase detail (read only when entering that phase)
+- `templates/requirements.md`, `templates/account.json`, `templates/project-skeleton.md`
+- `scripts/init_project.py`, `scripts/captcha_probe.py`
 
-Read each phase file only when you actually enter that phase. Do not preload them.
+Read phase files and specs **only when entering that phase/sub-task**. Do not preload everything.
