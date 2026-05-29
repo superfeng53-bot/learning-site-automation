@@ -75,6 +75,10 @@ Handoff 模板（固定 8 段，每段 1–5 行，**禁止粘贴大段代码**�
 ## 已验证命令
 - …
 
+## 验收摘要
+- 报告：`docs/verification/PHASE<N>_REPORT.md`（DoD/spec 逐项 pass/fail + 证据）
+- 缺口：`docs/gaps/PHASE<N>_gaps.md`（无则写「无」）
+
 ## 未完成 / 下步第一件事
 - …
 
@@ -257,7 +261,8 @@ cp ~/.cursor/skills/learning-site-automation/templates/agents/api-recon.md \
 | phase gate 与用户确认 | 单个 `*Service` 模块 |
 | 合并 API_REFERENCE | 整页 `index.html` |
 | 跑通端到端 smoke test | PyInstaller 打包脚本 |
-| 写 handoff 文件 | openpyxl 模板生成（在 spreadsheet skill 指导下） |
+| 写 handoff + verification report + gaps（如有） | openpyxl 模板生成（在 spreadsheet skill 指导下） |
+| 对照 phase DoD / `web-ui-spec` / `excel-spec` 验收子 agent 产出后再合并 | — |
 
 **修订**：Phase 1 Step 2 **可以**派子 agent 做 browser 侦察，但 captcha 族最终判定与 AskQuestion 仍由父 agent 负责。
 
@@ -273,3 +278,62 @@ cp ~/.cursor/skills/learning-site-automation/templates/agents/api-recon.md \
 - ❌ Phase 5 未读 `web-ui-spec.md` / `excel-spec.md` 就开始写 UI 或 xlsx  
 - ❌ 用英文 UI 文案「先跑通再说」  
 - ❌ 导出 Excel 重排导入列顺序  
+
+---
+
+## 8. 验收与缺口闭环（Implementation Assurance）
+
+与 Cursor 内置 skill **不重复**：`babysit` 只管 PR/CI；`create-rule` 只管长期约定。本节只管 **本 workflow 的阶段交付**。
+
+### 8.1 三类文件分工
+
+| 文件 | 用途 | 何时写 |
+|------|------|--------|
+| `docs/handoffs/PHASE<N>_*.md` | 新对话上下文交接 | phase 结束或 phase 内检查点 |
+| `docs/verification/PHASE<N>_REPORT.md` | DoD/spec 逐项 **pass/fail + 证据** | 每次宣布 phase 完成前 |
+| `docs/gaps/PHASE<N>_gaps.md` | 做不到 / 暂缓的需求与阻塞证据 | 有 gap 时；无 gap 可不建文件 |
+
+**禁止**在 `verification/` 里再抄一遍完整 checklist（权威清单仍在 `phaseN-*.md`、`web-ui-spec.md` §12–§13、`excel-spec.md` §6）。
+
+### 8.2 `PHASE<N>_REPORT.md` 模板
+
+```markdown
+# Phase N Verification Report — <站点>
+
+| # | Source | Item | Result | Evidence |
+|---|--------|------|--------|----------|
+| 1 | phase1-login-recon.md DoD | docs/LOGIN_FLOW.md | pass | path + section count |
+| 2 | phase1-login-recon.md DoD | cli_login 成功 | pass | `python -m <pkg>.cli_login` exit 0 |
+| … | … | … | pass/fail/skipped | command / file / manual step |
+
+Open gaps: none | see docs/gaps/PHASE<N>_gaps.md
+User accepted scope cuts: none | listed in phase-gate chat
+```
+
+Phase 5 额外引用：`web-ui-spec.md` §12–§13、`excel-spec.md` §6 各行填入上表，不得只写「UI 已完成」。
+
+### 8.3 `PHASE<N>_gaps.md` 模板
+
+```markdown
+# Phase N Gaps — <站点>
+
+| Requirement | Why blocked | Evidence | Workaround | User decision |
+|-------------|-------------|----------|------------|---------------|
+| … | SMS 验证码 | browser 截图 / Network | 手动输入或砍 scope | pending / accepted / rejected |
+```
+
+有 **pending** 行时：**不得**进入下一阶段，除非用户在 phase gate 里明确接受 scope cut（可与「是否进入 phase N+1」同一条消息确认）。
+
+### 8.4 父 agent 验收子 agent（硬规则）
+
+1. 子 agent 只回传：结论 + 文件路径 + 一条验证命令。  
+2. 父 agent **Read 合并后的文件**，按 phase DoD 或 spec § 逐项打 pass/fail。  
+3. 子 agent 聊天里说「完成」≠ 验收通过；未写 `PHASE<N>_REPORT.md` 不算 phase 结束。  
+
+Phase 5 子 agent 交付 `index.html` / `excel_io.py` 后，父 agent 必须对照 `web-ui-spec.md` §13 与 `excel-spec.md` §6 填报告，再写 handoff。
+
+### 8.5 与 `create-rule` / CI 的边界
+
+- **Gap（临时）** → `docs/gaps/`；用户确认后的**稳定解析约定** → 可选 `create-rule`（phase 2 后）。  
+- **Phase 6 CI** → lint + import smoke only；单实例、二次启动、Excel 列对齐等 **不进 CI**，写在 `PHASE5_REPORT` / `PHASE6_REPORT` 的手动证据里。  
+- 用户 babysit PR 时再用 **`babysit` skill**；与本节 phase 验收互不替代。

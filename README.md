@@ -7,7 +7,7 @@
 | 路径 | 说明 |
 |------|------|
 | `SKILL.md` | 技能入口、Cursor 编排（`cursor-agent-playbook.md`）、六阶段总览 |
-| `cursor-agent-playbook.md` | 内置浏览器优先（§1.1）、handoff、子 agent、解析用 skill 组合（§5） |
+| `cursor-agent-playbook.md` | 内置浏览器优先（§1.1）、handoff、验收/缺口闭环（§8）、子 agent、解析用 skill 组合（§5） |
 | `web-ui-spec.md` | Phase 5 Web 控制台规格（**简体中文**、复制日志、无 HTML 模板） |
 | `excel-spec.md` | 中文 Excel 模板/导出列对齐、`error_log_text` |
 | `phase1-login-recon.md` … `phase6-packaging.md` | 各阶段操作细则与验收清单 |
@@ -30,7 +30,7 @@ ln -sf /path/to/learning-site-automation ~/.cursor/skills/learning-site-automati
 
 ## 在 Cursor 中触发
 
-在对话中提供 **站点登录 URL**、**可用的测试用户名/密码**，并说明目标（例如：做自动化、跑课、刷课、持续学习服务）。Agent 会匹配 `SKILL.md` 中的描述并进入六阶段流程；每阶段结束会请你确认后再进入下一阶段。
+在对话中提供 **站点登录 URL**、**可用的测试用户名/密码**，并说明目标（例如：做自动化、跑课、刷课、持续学习服务）。Agent 会匹配 `SKILL.md` 中的描述并进入六阶段流程；每阶段结束会写 `docs/verification/PHASE<N>_REPORT.md` 并请你确认后再进入下一阶段（有阻塞项时记录在 `docs/gaps/`）。
 
 无需单独命令：确保技能目录已被 Cursor 加载（重启或新开 Agent 会话后通常自动发现）。
 

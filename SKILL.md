@@ -38,6 +38,28 @@ If any of (1)-(4) is missing, ask the user **once** with `AskQuestion` before in
 4. **Preserve site-specific knowledge in code, not in this skill**: every site differs in captcha kind, response shape, anti-bot tricks. The skill is a scaffold, not a copy-paste template.
 5. **Never commit the test account**: add `data/`, `.run/`, cookies, and account JSONs to `.gitignore` in phase 1.
 6. **Don't try to finish in one shot**: split work across phases + specs. **Read `cursor-agent-playbook.md`** before phase 1 for handoff files, New Chat boundaries, sub-agents, and other skill/MCP usage.
+7. **Implementation assurance**: do not announce a phase complete while any DoD item is unchecked or any open gap lacks user acceptance. See **Implementation Assurance** below.
+
+## Implementation Assurance
+
+Close the loop without duplicating existing checklists. **Authoritative sources** stay where they are:
+
+| Scope | Checklist lives in |
+|-------|-------------------|
+| Phases 1–4, 6 | `phaseN-*.md` → Definition of Done |
+| Phase 5 Web UI | `web-ui-spec.md` §12–§13 |
+| Phase 5 Excel | `excel-spec.md` §6 |
+
+At **end of every phase**, the parent agent MUST:
+
+1. Walk the authoritative checklist(s) for that phase — do not copy them into a second file.
+2. Write `docs/verification/PHASE<N>_REPORT.md`: each item → `pass` / `fail` / `skipped` + one-line evidence (command run, file path, manual step).
+3. If anything is **blocked or intentionally deferred**, write `docs/gaps/PHASE<N>_gaps.md` (one row per gap: requirement, evidence, workaround, user decision needed).
+4. **Phase gate rule**: enter the next phase only when every DoD item is `pass` or `skipped` with documented reason, **and** every gap is either closed or **explicitly accepted** by the user in the same phase-gate message (does **not** consume an extra `AskQuestion` slot — bundle with the normal “OK to enter phase N+1?”).
+
+**Sub-agent rule**: parent agent integrates output only after re-running DoD against the merged tree; never trust “done” from chat alone.
+
+**Stable conventions vs transient gaps**: confirmed, long-lived site rules → optional **`create-rule`** after phase 2; open blockers → `docs/gaps/` only, not `.cursor/rules/`.
 
 ## Cursor Agent Playbook (read before phase 1)
 
@@ -45,7 +67,7 @@ If any of (1)-(4) is missing, ask the user **once** with `AskQuestion` before in
 
 | When | Action |
 |------|--------|
-| End of each phase | Write `docs/handoffs/PHASE<N>_*.md`; offer user **New Chat** with「新对话启动语」 |
+| End of each phase | Write `docs/verification/PHASE<N>_REPORT.md` + `docs/handoffs/PHASE<N>_*.md`; gaps → `docs/gaps/` if any; offer **New Chat** |
 | Phase 1 → 2 | Strongly suggest New Chat (browser capture bloat) |
 | Phase 2, every 2 domains | Mid-phase handoff + optional New Chat |
 | Phase 5 backend → UI | New Chat before generating `index.html` |
@@ -100,6 +122,8 @@ Never drop: endpoint paths, failure codes, captcha family, `<pkg>`/`<svc>` names
 ├── docs/
 │   ├── LOGIN_FLOW.md          # produced in phase 1
 │   ├── handoffs/              # PHASE<N>_*.md — Cursor context handoffs
+│   ├── verification/          # PHASE<N>_REPORT.md — DoD pass/fail evidence (no duplicate checklists)
+│   ├── gaps/                  # PHASE<N>_gaps.md — blocked/deferred requirements (if any)
 │   ├── api-discovery/         # phase 2 per-domain drafts (optional)
 │   └── 通用需求说明.md
 ├── data/                      # gitignored
@@ -147,6 +171,8 @@ At most three times across the whole run:
 2. End of phase 1 — captcha kind ambiguous
 3. End of phase 4 — continue to phase 5 or stop
 
+Bundling **gap acceptance** or **scope cut** into the normal phase-gate confirmation does **not** count as an extra question.
+
 ## Anti-Patterns to Avoid
 
 - Do NOT use Selenium/Playwright at runtime or for recon (in Cursor, use **`cursor-ide-browser` MCP** only for phase 1–2 site parsing; see playbook §1.1)
@@ -157,6 +183,9 @@ At most three times across the whole run:
 - Do NOT reorder export columns relative to import template
 - Do NOT use emoji in UI text; use plain Chinese labels
 - Do NOT skip `ui.confirm` / `ui.toast` patterns in web UI
+- Do NOT mark a phase complete with unchecked DoD or unaccepted gaps in `docs/gaps/`
+- Do NOT duplicate full spec checklists in `docs/verification/` — only pass/fail + evidence
+- Do NOT merge sub-agent output without parent re-running DoD on the integrated tree
 
 ## Auxiliary Resources In This Skill
 
