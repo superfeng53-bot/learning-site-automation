@@ -1,18 +1,84 @@
 # Phase 2 — Business API Toolkit
 
-Goal: wrap each business endpoint the site exposes (course listing, joining, video progress, exam submission, credit application, member info, recharge, etc.) into thin `<pkg>/*.py` service classes, each operating on a shared `HttpClient`. Produce `<pkg>/API_REFERENCE.md` that future phases will read.
+Goal: wrap the confirmed business endpoints the site exposes into thin `<pkg>/*.py` service classes, each operating on a shared `HttpClient`. The common learning workflow is mandatory; optional capabilities are selected and confirmed with the user before API discovery starts. Produce `<pkg>/API_REFERENCE.md` that future phases will read.
 
 ## Definition of Done
 
 - [ ] One `*Service` class per business domain, each owning its endpoints
 - [ ] One `cli_*.py` per service, runnable via `python -m <pkg>.cli_<name>`
 - [ ] `<pkg>/API_REFERENCE.md` lists every endpoint: method, path, params, sample response, failure codes
+- [ ] `docs/API_REQUIREMENTS.md` records the user-confirmed required and optional capability scope
 - [ ] Every service uses the shared `HttpClient` (no ad-hoc `requests.post` calls)
 - [ ] All failure paths return a `SwwResponse`-shaped dataclass (or equivalent) with `ok / message / code / hint / raw`
 
+## Step 0 — Confirm API Capability Scope
+
+Before any Phase 2 browser reconnaissance or service generation, the parent agent MUST ask the user to confirm which site capabilities are in scope. Use one `AskQuestion` interaction with multi-select for optional capabilities, then write the confirmed result to `docs/API_REQUIREMENTS.md`.
+
+Mandatory capabilities are always in scope:
+
+| Capability | Typical domains | Notes |
+|------------|-----------------|-------|
+| Login / session continuity | `login`, `member` | Phase 1 login plus Phase 3 session probe must keep working |
+| Account / profile info | `member` | User profile, identity, balance or equivalent account metadata |
+| Course list | `course` | Catalog, available courses, joined courses if separate |
+| Course detail and status | `course`, `study` | Lessons, duration, joined state, progress, completion flags |
+| Course progress reporting | `study` | Video/chapter progress, completion checkpoints |
+| Course exam, if present | `exam` | Start paper, submit answers, read result; skip only when the site has no exam flow |
+| Credit application, if present | `credit` | Credit preview, evaluation/survey, application, application status; skip only when the site has no credit-application flow |
+
+Optional capabilities must be selected by the user:
+
+| Option | Typical domain | When selected |
+|--------|----------------|---------------|
+| 学科列表 / 分类列表 | `course` | Need subject/category discovery, subject mapping, or account requirements by subject |
+| 注册 | `registration` | Need to create platform accounts through API |
+| 购卡 / 充值 | `recharge` | Need card purchase, card binding, recharge, or balance top-up |
+| 其他 | site-specific | User describes extra business flow; create a named domain for it |
+
+Suggested `AskQuestion` prompt:
+
+```text
+这个站点除了通用学习流程外，还需要实现哪些可选 API 能力？可多选；如果有其他需求，请选「其他」并补充说明。
+```
+
+After the user answers, write:
+
+```markdown
+# API Requirements
+
+## Mandatory
+- Login / session continuity
+- Account / profile info
+- Course list
+- Course detail and status
+- Course progress reporting
+- Course exam, if present
+- Credit application, if present
+
+## Optional Selected
+- 学科列表 / 分类列表
+
+## Optional Not Selected
+- 注册
+- 购卡 / 充值
+
+## Site-Specific Notes
+- ...
+
+## Phase 2 Domain Plan
+- member
+- course
+- study
+- exam (discover and implement only if present)
+- credit (discover and implement only if present)
+```
+
+If a mandatory-if-present capability is genuinely absent from the site (for example no exam or no credit-application flow), document it as `skipped: site has no exam flow` or `skipped: site has no credit application flow` in both `docs/API_REQUIREMENTS.md` and the phase verification report. Do not ask the user to opt out of exam or credit in the Phase 2 `AskQuestion` — presence is decided by browser recon, same as exam.
+
 ## Discovery Loop (repeat for each domain)
 
-**Cursor 编排**：每个 domain 单独一轮——先用 **`cursor-ide-browser` MCP**（内置浏览器，playbook §1.1）+ `Task explore` 或 `api-recon` subagent → `docs/api-discovery/<domain>.md`，再 `Task generalPurpose` 实现 `*Service`。每完成 **2 个 domain** 写 `docs/handoffs/PHASE2_<domains>_done.md` 并建议用户 **New Chat**。详见 playbook §3、§5。
+**Cursor 编排**：每个 confirmed domain 单独一轮——先用 **`cursor-ide-browser` MCP**（内置浏览器，playbook §1.1）+ `Task explore` 或 `api-recon` subagent → `docs/api-discovery/<domain>.md`，再 `Task generalPurpose` 实现 `*Service`。每完成 **2 个 domain** 写 `docs/handoffs/PHASE2_<domains>_done.md` 并建议用户 **New Chat**。详见 playbook §3、§5。
 
 1. **Browse with the test account** using **`cursor-ide-browser` MCP** (not external automation), perform the action manually
 2. Capture the network calls via `browser_cdp Network.enable` and `Network.requestWillBeSent` / `responseReceived`. Use `Network.getResponseBody` for response shapes you cannot read from the snapshot
@@ -21,19 +87,22 @@ Goal: wrap each business endpoint the site exposes (course listing, joining, vid
 5. Confirm parity with browser behaviour
 6. Promote the script into a service method
 
-Do this for each of the domains below in roughly this order.
+Do this for each confirmed domain in roughly this order. Mandatory domains come first; optional domains are included only when selected by the user or required by a selected flow.
 
-## Canonical Domains (skip any irrelevant ones)
+## Canonical Domains
 
-| Domain | Typical endpoints | File |
-|--------|-------------------|------|
-| Course catalog | `/course/list`, `/course/detail`, `/subject/list` | `course.py` |
-| Join / enroll | `/study/join`, `/member/join` | `study.py` (join section) |
-| Video progress | `/study/recordPlayTime`, `/study/progress` | `study.py` |
-| Exam | `/exam/start`, `/exam/submit`, `/exam/result` | `exam.py` |
-| Credit application | `/member/creditMsg`, `/member/requestCredit`, `/projecteva/saveEva` | `credit.py` |
-| Member / profile | `/member/balance`, `/member/projects`, `/member/info` | `member.py` |
-| Recharge | `/card/recharge`, `/recharge/...` | `recharge.py` |
+| Scope | Domain | Typical endpoints | File |
+|-------|--------|-------------------|------|
+| Mandatory | Member / profile | `/member/balance`, `/member/projects`, `/member/info` | `member.py` |
+| Mandatory | Course catalog | `/course/list`, `/course/detail` | `course.py` |
+| Optional: 学科列表 | Subject / category list | `/subject/list`, `/category/list` | `course.py` or `subject.py` |
+| Mandatory | Join / enroll | `/study/join`, `/member/join` | `study.py` (join section) |
+| Mandatory | Video progress | `/study/recordPlayTime`, `/study/progress` | `study.py` |
+| Mandatory if present | Exam | `/exam/start`, `/exam/submit`, `/exam/result` | `exam.py` |
+| Mandatory if present | Credit application | `/member/creditMsg`, `/member/requestCredit`, `/projecteva/saveEva` | `credit.py` |
+| Optional: 购卡 / 充值 | Recharge | `/card/recharge`, `/recharge/...` | `recharge.py` |
+| Optional: 注册 | Registration | `/register`, `/user/create`, `/sms/send` | `registration.py` |
+| Optional: 其他 | Site-specific | confirmed with user | named after the domain |
 
 ## Service Class Pattern
 
@@ -49,6 +118,7 @@ class CourseService:
         self.client = client
 
     def list_subjects(self) -> list[dict]:
+        """Include only when 学科列表 / 分类列表 is selected or required by the site."""
         data = self.client.form_post_safe("/subject/list", {})
         if data.get("result") != "ok":
             raise RuntimeError(data.get("msg", "list_subjects failed"))
@@ -212,9 +282,9 @@ One section per service, one sub-section per method. Include real (sanitized) re
 
 ## End-of-phase Report
 
-1. Domains implemented (checkboxes vs canonical table above).
+1. Domains implemented (checkboxes vs `docs/API_REQUIREMENTS.md`).
 2. Notable site-specific quirks (e.g. "video needs `recordPlayTime` every 30s exactly").
-3. Anything skipped and why.
+3. Anything skipped and why, including optional capabilities not selected and mandatory-if-present flows not found.
 4. Ask: "OK to enter phase 3 (stability + retry)?"
 
 ## Pitfalls Observed In The Wild

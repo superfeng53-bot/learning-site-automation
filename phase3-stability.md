@@ -11,6 +11,14 @@ Goal: make the toolkit resilient to (a) session expiry, (b) transient network er
 - [ ] Login retry vs business retry are clearly separated (login is captcha-bounded, business uses session-expired detection + relogin)
 - [ ] `responses.py` has an `is_session_expired(exc_or_msg)` helper that all callers use
 
+## Read First
+
+Read `docs/API_REQUIREMENTS.md` before adding service factories or probes. Session reuse is mandatory, but domain-specific helpers must match the confirmed Phase 2 scope:
+
+- Always provide factories for mandatory services that were implemented (`member`, `course`, `study`, `exam` when the site has exams, and `credit` when the site has credit application).
+- Provide optional factories (`recharge`, `registration`, subject-specific service, or other site-specific services) only when the user selected that capability in Phase 2.
+- Pick the cheapest authenticated probe from the confirmed mandatory surface. Prefer account/profile or course list; use subject list only if `学科列表 / 分类列表` is selected or the site exposes it as the cheapest stable probe.
+
 ## Module 1 — `client.py` retry primitives
 
 The base `HttpClient` already exists from phase 1. Add safe variants:
@@ -215,11 +223,15 @@ class SessionManager:
         with self._lock:
             self._clients.pop(user_id, None)
 
-    def get_course_service(self, user_id): from .course import CourseService; return CourseService(self.get_client(user_id))
-    def get_credit_service(self, user_id): from .credit import CreditService; return CreditService(self.get_client(user_id))
-    def get_study_service(self, user_id): from .study import StudyService; return StudyService(self.get_client(user_id))
-    def get_exam_service(self, user_id): from .exam import ExamService; return ExamService(self.get_client(user_id))
     def get_member_service(self, user_id): from .member import MemberService; return MemberService(self.get_client(user_id))
+    def get_course_service(self, user_id): from .course import CourseService; return CourseService(self.get_client(user_id))
+    def get_study_service(self, user_id): from .study import StudyService; return StudyService(self.get_client(user_id))
+
+    # Add only when the capability is confirmed in docs/API_REQUIREMENTS.md.
+    def get_exam_service(self, user_id): from .exam import ExamService; return ExamService(self.get_client(user_id))
+    def get_credit_service(self, user_id): from .credit import CreditService; return CreditService(self.get_client(user_id))
+    def get_recharge_service(self, user_id): from .recharge import RechargeService; return RechargeService(self.get_client(user_id))
+    def get_registration_service(self, user_id): from .registration import RegistrationService; return RegistrationService(self.get_client(user_id))
 
     def login_user(self, user_id, username, password) -> LoginResult:
         remaining = get_cooldown_remaining()
@@ -265,7 +277,7 @@ def get_session_manager() -> SessionManager:
 
 Key behaviors:
 
-- **Token reuse**: load saved cookies, hit `is_logged_in()`, optionally run a domain-specific `probe()` (e.g. `course_svc.list_subjects()` — proves the session can do real work). If probe throws, fall through to fresh login.
+- **Token reuse**: load saved cookies, hit `is_logged_in()`, optionally run a domain-specific `probe()` (e.g. `member_svc.get_profile()` or `course_svc.list_courses()` — proves the session can do real work). If probe throws, fall through to fresh login.
 - **Per-username lock**: prevents two threads with the same account from doing concurrent captchas (which both burn ratelimit and confuse the backend).
 - **Captcha-cooldown awareness**: refuses login attempts during global cooldown without burning a captcha.
 

@@ -1,15 +1,23 @@
 # Phase 4 — End-to-End Single-Account Runner
 
-Goal: stitch all phase-2 services into one `CourseRunner` that, given (cookies OR credentials, project_id), drives a single course from join → watch → exam → credit-applied. Plus a top-level `run_course.py` CLI that takes the smallest possible set of inputs.
+Goal: stitch the confirmed phase-2 services into one `CourseRunner` that, given (cookies OR credentials, project_id), drives a single course through the site's required learning stages: join/enroll if needed, watch/report progress, exam if the course has one, and credit application when the site exposes that flow. Plus a top-level `run_course.py` CLI that takes the smallest possible set of inputs.
 
 ## Definition of Done
 
-- [ ] `<pkg>/course_runner.py` exposes `CourseRunner(course, study, exam, credit).run(project_id) -> RunResult`
-- [ ] `RunResult` reports stage outcomes: `joined`, `watched`, `exam_passed`, `credit_applied`, plus a per-chapter log
+- [ ] `<pkg>/course_runner.py` exposes `CourseRunner(course, study, exam=None, credit=None).run(project_id) -> RunResult`
+- [ ] `RunResult` reports stage outcomes: `joined`, `watched`, `exam_passed` when applicable, `credit_applied` when credit application is in scope, plus a per-chapter log
 - [ ] `run_course.py` at project root: `python run_course.py --cookies data/cookies.json --project-id <uuid>` works end-to-end
 - [ ] Resumable: if the run crashes mid-watch, re-running picks up where it left off (uses progress API, not local state)
 - [ ] All transient failures auto-recover via phase-3 plumbing; only business failures stop the run
 - [ ] Optional `--account data/account.json --auto-login` mode that combines `ensure_session` with the runner
+
+## Read First
+
+Read `docs/API_REQUIREMENTS.md` and `<pkg>/API_REFERENCE.md` before writing the runner:
+
+- Always include the mandatory learning path: account/session, course detail/status, join/enroll when required by the site, and progress reporting.
+- Treat exam as mandatory-if-present. If the site has no exam flow, record `exam_required=False` / `exam_passed=True` with a clear log message such as `site has no exam flow`.
+- Treat credit application as mandatory-if-present. If `docs/API_REQUIREMENTS.md` documents a site credit-application flow, wire `CreditService` and apply-queue assumptions; if the site has no such flow, do not import `CreditService`, leave `credit_applied=False` or `None` based on the project's chosen result schema, and record `skipped: site has no credit application flow`.
 
 ## Module: `course_runner.py`
 
@@ -47,7 +55,7 @@ class RunResult:
 
 
 class CourseRunner:
-    def __init__(self, course_svc, study_svc, exam_svc, credit_svc=None):
+    def __init__(self, course_svc, study_svc, exam_svc=None, credit_svc=None):
         self.course = course_svc
         self.study = study_svc
         self.exam = exam_svc
@@ -116,6 +124,8 @@ class CourseRunner:
         if not detail.get("has_exam"):
             result.exam_passed = True
             return
+        if self.exam is None:
+            raise RuntimeError("course has exam but ExamService is not configured")
         outcome = self.exam.pass_exam(project_id, detail["exam_study_id"])
         result.exam_passed = outcome.ok
         result.logs.append(StageLog("exam", outcome.ok, outcome.message))
@@ -123,6 +133,8 @@ class CourseRunner:
             raise RuntimeError(f"exam failed: {outcome.message}")
 
     def _apply_credit(self, project_id, result):
+        if self.credit is None:
+            raise RuntimeError("credit application in scope but CreditService is not configured")
         outcome = self.credit.apply_credit(project_id, auto_survey=True)
         result.credit_applied = outcome.ok
         result.logs.append(StageLog("credit", outcome.ok, outcome.message,
@@ -209,11 +221,11 @@ Add a `get_course_runner(user_id)` factory on `SessionManager` for ergonomics.
 
 Run, in order, against the test account:
 
-1. `python run_course.py --account data/account.json --project-id <smallest-course>` → all 4 booleans true
+1. `python run_course.py --account data/account.json --project-id <smallest-course>` → mandatory stage booleans true; optional booleans are asserted only when selected in `docs/API_REQUIREMENTS.md`
 2. Same command again → should be a no-op (everything `DONE`), exits cleanly
 3. Delete `data/cookies.json`, run again → fresh login + full run
 4. Pick a course you've already half-watched in browser, run → confirms resume behavior
-5. Pass `--apply-credit` → check `credit_applied=true` and surface the hint dict if the site returned a code
+5. If credit application is in scope per `docs/API_REQUIREMENTS.md`, pass `--apply-credit` → check `credit_applied=true` and surface the hint dict if the site returned a code. If not in scope, verify the CLI rejects or omits `--apply-credit` clearly.
 
 If 4 doesn't work, the lesson-classification heuristic is wrong — adjust thresholds.
 

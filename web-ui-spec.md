@@ -241,6 +241,8 @@ font-size 12px; font-weight 500; white-space nowrap
 
 `running` 圆点 pulse：`@keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(1.4)} } animation: pulse 1.8s ease infinite`
 
+`waiting_apply` 仅在 `docs/API_REQUIREMENTS.md` 确认站点存在申请学分流程时出现；站点无该流程时不要在筛选、统计或状态转换中展示该状态。
+
 ### 6.3 Stat Tile `.stat-tile`
 
 ```
@@ -356,6 +358,8 @@ cursor pointer（折叠时）
 **Excel 上传区 `.upload-zone`**：虚线 border `2px dashed var(--c-border-strong)`，圆角 `var(--r-md)`，`padding 20px`，居中；拖拽悬停时 border 变 primary，背景 `var(--c-primary-soft)`，有 `dragover / dragleave` 事件。上传文件须符合 **`excel-spec.md`**：Sheet 名与表头字段名**全部中文**（姓名、账号、密码…），禁止英文列名。
 
 **表单字段标签**（与 Excel 导入列对齐，全部中文）：姓名、账号、密码、学科1、学分1、学科2、学分2、卡号、卡号密码、备注。
+
+字段显示必须跟 `docs/API_REQUIREMENTS.md` 对齐：学科/学分字段仅在需要按学科或学分选择课程时作为业务字段；卡号/卡号密码仅在 `购卡 / 充值` 被选择时参与业务逻辑。为了兼容 Excel round-trip，后端可继续接受空列，但 UI 不应把未选择能力展示成必填需求。
 
 **表单底部操作行**：右对齐，`display flex justify-content flex-end gap 10px`；包含「导入 Excel」（outline 按钮）和「添加」（primary 按钮 + `<kbd>N</kbd>` 提示）。
 
@@ -580,7 +584,7 @@ API：`await window.ui.confirm({ title, body, okText, okTone:"danger|primary", c
 }
 ```
 
-4 个 Tab：`基本信息 / 课程进度 / 申请队列 / 运行历史`
+Tabs 根据 `docs/API_REQUIREMENTS.md` 生成：基础为 `基本信息 / 课程进度 / 运行历史`；仅当站点存在申请学分流程时增加 `申请队列`。
 
 **课程进度 Tab** 内每条课程显示：课程名 + 学科标签 + 学分 + 状态 Pill + 简短时间戳；用 `.kv` 或列表 flex 行展示。**列表按 `queue_rank` 升序**（与 `templates/requirements.md` §3.2.1 选课优先级一致）。
 
@@ -669,7 +673,7 @@ API：`await window.ui.confirm({ title, body, okText, okTone:"danger|primary", c
 | Method | Path | 入参 | 出参关键字段 |
 |---|---|---|---|
 | GET | `/api/accounts?status=&search=&limit=&offset=&date_from=&date_to=` | query | `{ items[{…, error_log_text?}], total, counts{…}, active_workers, paused, concurrency_limit }` |
-| POST | `/api/accounts` | `{ display_name, username, password, requirements:[{category, credits}] }` | `{ id }` |
+| POST | `/api/accounts` | `{ display_name, username, password, requirements?:[{category, credits}], extra?:{...} }`，字段按 `docs/API_REQUIREMENTS.md` 启用 | `{ id }` |
 | POST | `/api/accounts/upload` | multipart `file` | `{ added, skipped, failed, errors? }` |
 | GET | `/api/accounts/{id}` | — | `{ ...account, error_log_text, extra{…}, apply_tasks[], runs[] }` |
 | PATCH | `/api/accounts/{id}` | 部分字段 | `{ ok: true }` |

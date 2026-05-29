@@ -12,7 +12,7 @@
 | `excel-spec.md` | Excel 导入/导出规格：**文件名、Sheet 名、表头字段名全部中文**；导出列与导入模板对齐 |
 | `phase1-login-recon.md` … `phase6-packaging.md` | 各阶段操作细则与验收清单 |
 | `scripts/` | `init_project.py`、`captcha_probe.py` |
-| `templates/` | 需求模板、账号 JSON、项目骨架；`agents/api-recon.md` → `.cursor/agents/` |
+| `templates/` | API 需求范围模板、通用需求模板、账号 JSON、项目骨架；`agents/api-recon.md` → `.cursor/agents/` |
 
 ## 安装
 

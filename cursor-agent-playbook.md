@@ -28,8 +28,9 @@
 | Phase 1 登录侦察 | **`cursor-ide-browser` MCP**（§1.1） | 打开登录页、抓 Network、读 cookie/localStorage |
 | Phase 1 登录侦察 | **`Task` + `subagent_type=explore`** 或 **`.cursor/agents/api-recon`** | 只读梳理页面结构；产出 draft md（须走内置浏览器） |
 | Phase 1 实现 | **`Task` + `subagent_type=generalPurpose`** | 独立实现 `captcha.py` / `login.py`（输入：侦察摘要文件） |
-| Phase 2 API 发现 | **`cursor-ide-browser` MCP**（§1.1） | 手动走一遍业务流，抓每个 domain 的请求 |
-| Phase 2 API 发现 | **`Task` + `explore`**（并行） | 每个业务域一份 `docs/api-discovery/<domain>.md` 草稿 |
+| Phase 2 需求确认 | **`AskQuestion`** | 多选可选 API 能力，写入 `docs/API_REQUIREMENTS.md` |
+| Phase 2 API 发现 | **`cursor-ide-browser` MCP**（§1.1） | 手动走一遍已确认业务流，抓每个 domain 的请求 |
+| Phase 2 API 发现 | **`Task` + `explore`**（并行） | 每个已确认业务域一份 `docs/api-discovery/<domain>.md` 草稿 |
 | Phase 2 HTTP 对照 | **`shell` skill**（可选） | browser 定稿后用 `curl`/小脚本对照 cookie 与响应 |
 | Phase 2 实现 | **`Task` + `generalPurpose`**（并行） | 每个 domain 一个 `*Service` + `cli_*.py` |
 | Phase 2 结束 / 多站点 | **`create-rule`** + **`memory-merger`** | 项目规则沉淀解析约定；workspace 级记忆合并 |
@@ -99,7 +100,7 @@ Handoff 模板（固定 8 段，每段 1–5 行，**禁止粘贴大段代码**�
 | 时机 | 原因 |
 |------|------|
 | Phase 1 → Phase 2 | browser 抓包 + 验证码试错占满上下文 |
-| Phase 2 每完成 **2 个** business domain | 每个 domain 的 request/response 样本很大 |
+| Phase 2 每完成 **2 个** confirmed business domain | 每个 domain 的 request/response 样本很大 |
 | Phase 2 → Phase 3 | API 细节应已在 `API_REFERENCE.md`，聊天可丢弃 |
 | Phase 5 的「后端 store/worker」→「Web UI」| UI spec 与调度逻辑不应混在同一上下文 |
 | 任何阶段内已读 **>8 个文件** 或编辑 **>15 次** | 见 `SKILL.md` Context Budget |
@@ -147,15 +148,17 @@ Handoff 模板（固定 8 段，每段 1–5 行，**禁止粘贴大段代码**�
 
 ### Phase 2 按 domain 并行
 
-对每个 relevant domain（course / study / exam / credit / …）：
+Phase 2 开始时，父 agent 必须先用 `AskQuestion` 让用户多选可选能力，并将结果写入 `docs/API_REQUIREMENTS.md`。通用能力固定纳入：登录/会话、账号信息、课程列表、课程详情和状态、课程进度上报、课程考试（如果站点存在）、申请学分（如果站点存在）。可选能力包括：学科列表/分类列表、注册、购卡/充值、其他站点特定流程。
+
+对每个 confirmed domain（member / course / study / exam-if-present / credit-if-present / selected optional domains）：
 
 1. **侦察**：browser MCP 或 `Task explore` → `docs/api-discovery/<domain>.md`  
 2. **实现**：`Task generalPurpose` → `<pkg>/<domain>.py` + `cli_<domain>.py`  
 3. **父 Agent 合并**：更新 `API_REFERENCE.md` 一节  
 
-**每完成 2 个 domain** → 写 `docs/handoffs/PHASE2_<domains>_done.md`，建议用户新开会话。
+**每完成 2 个 confirmed domain** → 写 `docs/handoffs/PHASE2_<domains>_done.md`，建议用户新开会话。
 
-Phase 2 侦察子 agent **不要**一次包「全部 6 个 domain」；一次最多 **1–2 个 domain**。
+Phase 2 侦察子 agent **不要**一次包「全部 6 个 domain」；一次最多 **1–2 个 confirmed domain**。未在 `docs/API_REQUIREMENTS.md` 选择的 optional domain 不要侦察或实现，除非用户重新确认。
 
 **Phase 2 侦察子 agent 提示词骨架**（复制改写）：
 
@@ -163,6 +166,7 @@ Phase 2 侦察子 agent **不要**一次包「全部 6 个 domain」；一次最
 你是 learning-site-automation Phase 2 API 侦察子任务（domain: <course|study|exam|…>）。
 项目根：<abs_path>
 已登录 cookie：见 data/cookies.json（勿在回复里复述）
+确认范围：先读 docs/API_REQUIREMENTS.md；只侦察其中列出的 confirmed domain
 
 在 Cursor 中必须用 cursor-ide-browser MCP 走一遍该 domain 的业务操作并抓 Network。
 禁止 Playwright/Selenium；禁止未走 browser 就用 WebFetch/curl 编造 endpoint。

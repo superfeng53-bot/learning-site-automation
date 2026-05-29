@@ -24,7 +24,7 @@ If any of (1)-(4) is missing, ask the user **once** with `AskQuestion` before in
 | Phase | Purpose | Output | Detail file |
 |-------|---------|--------|-------------|
 | 1 | Login reconnaissance via browser MCP + captcha probe | `docs/LOGIN_FLOW.md` + working `login.py` | `phase1-login-recon.md` |
-| 2 | Wrap each business endpoint (course / video / exam / credit / member / recharge) | `<pkg>/course.py`, `study.py`, ... + `API_REFERENCE.md` | `phase2-api-tools.md` |
+| 2 | Confirm capability scope, then wrap business endpoints (course / video / exam / credit-if-present / optional recharge/registration/etc.) | `docs/API_REQUIREMENTS.md`, `<pkg>/course.py`, `study.py`, ... + `API_REFERENCE.md` | `phase2-api-tools.md` |
 | 3 | Session reuse, error classification, retry policy | `session_manager.py`, `responses.py`, `captcha_limiter.py` | `phase3-stability.md` |
 | 4 | End-to-end single-account runner | `course_runner.py` + `run_course.py` entry | `phase4-end-to-end.md` |
 | 5 | Multi-account SQLite scheduler + FastAPI web console | `<svc>/orchestrator.py`, `worker.py`, `apply_worker.py`, `web/app.py` | `phase5-service.md` |
@@ -38,7 +38,8 @@ If any of (1)-(4) is missing, ask the user **once** with `AskQuestion` before in
 4. **Preserve site-specific knowledge in code, not in this skill**: every site differs in captcha kind, response shape, anti-bot tricks. The skill is a scaffold, not a copy-paste template.
 5. **Never commit the test account**: add `data/`, `.run/`, cookies, and account JSONs to `.gitignore` in phase 1.
 6. **Don't try to finish in one shot**: split work across phases + specs. **Read `cursor-agent-playbook.md`** before phase 1 for handoff files, New Chat boundaries, sub-agents, and other skill/MCP usage.
-7. **Implementation assurance**: do not announce a phase complete while any DoD item is unchecked or any open gap lacks user acceptance. See **Implementation Assurance** below.
+7. **Capability scope gate**: at the start of phase 2, use `AskQuestion` multi-select to confirm optional API capabilities. Mandatory capabilities are login/session, account/profile info, course list, course detail/status, progress reporting, exam if present, and credit application if present. Optional choices include 学科列表/分类列表、注册、购卡/充值、其他. Persist the answer in `docs/API_REQUIREMENTS.md` and make later phases follow it.
+8. **Implementation assurance**: do not announce a phase complete while any DoD item is unchecked or any open gap lacks user acceptance. See **Implementation Assurance** below.
 
 ## Implementation Assurance
 
@@ -121,6 +122,7 @@ Never drop: endpoint paths, failure codes, captcha family, `<pkg>`/`<svc>` names
 │   └── web/app.py + templates/index.html
 ├── docs/
 │   ├── LOGIN_FLOW.md          # produced in phase 1
+│   ├── API_REQUIREMENTS.md     # produced at phase 2 start; confirmed capability scope
 │   ├── handoffs/              # PHASE<N>_*.md — Cursor context handoffs
 │   ├── verification/          # PHASE<N>_REPORT.md — DoD pass/fail evidence (no duplicate checklists)
 │   ├── gaps/                  # PHASE<N>_gaps.md — blocked/deferred requirements (if any)
@@ -166,11 +168,12 @@ These apply to every generated project unless the user explicitly opts out:
 
 ## When to Call AskQuestion
 
-At most three times across the whole run:
+At most four times across the whole run:
 
 1. Start — missing inputs (1)–(4)
 2. End of phase 1 — captcha kind ambiguous
-3. End of phase 4 — continue to phase 5 or stop
+3. Start of phase 2 — confirm optional API capability scope (multi-select; write `docs/API_REQUIREMENTS.md`)
+4. End of phase 4 — continue to phase 5 or stop
 
 Bundling **gap acceptance** or **scope cut** into the normal phase-gate confirmation does **not** count as an extra question.
 
@@ -194,7 +197,7 @@ Bundling **gap acceptance** or **scope cut** into the normal phase-gate confirma
 - `web-ui-spec.md` — phase-5 web console (中文 UI, 复制日志, no HTML template)
 - `excel-spec.md` — 中文模板/导出列对齐, `error_log_text`
 - `phase1-login-recon.md` … `phase6-packaging.md` — per-phase detail (read only when entering that phase)
-- `templates/requirements.md`, `templates/account.json`, `templates/project-skeleton.md`
+- `templates/requirements.md`, `templates/api-requirements.md`, `templates/account.json`, `templates/project-skeleton.md`
 - `templates/agents/api-recon.md` + `templates/api-recon-agent.md`（安装说明；复制前者到 `.cursor/agents/api-recon.md`）
 - `scripts/init_project.py`, `scripts/captcha_probe.py`
 

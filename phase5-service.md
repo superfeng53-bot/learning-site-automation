@@ -1,12 +1,12 @@
 # Phase 5 — Multi-Account Always-On Service
 
-Goal: turn the single-account runner into a long-running scheduler that drives many accounts in parallel, persists state across crashes, and exposes a web console for operators. This phase is **highly generic** — most of the design carries over from site to site. Only the worker-internal pipeline (phase 4 runner integration) is site-specific.
+Goal: turn the single-account runner into a long-running scheduler that drives many accounts in parallel, persists state across crashes, and exposes a web console for operators. This phase is **highly generic** — most of the design carries over from site to site. The worker-internal pipeline and optional queues/actions must follow the confirmed capability scope in `docs/API_REQUIREMENTS.md`.
 
 ## Definition of Done
 
-- [ ] `<svc>/persistence/store.py` with SQLite (WAL) schema for `accounts / runs / apply_queue / credit_applications / kv`
+- [ ] `<svc>/persistence/store.py` with SQLite (WAL) schema for `accounts / runs / kv`, plus optional tables from `docs/API_REQUIREMENTS.md` such as `apply_queue / credit_applications`
 - [ ] `<svc>/worker.py` `AccountWorker.run_once(account)` runs the full single-account pipeline
-- [ ] `<svc>/apply_worker.py` `ApplyWorker.process_one(now)` consumes the apply queue independently
+- [ ] If credit application is in scope per `docs/API_REQUIREMENTS.md`, `<svc>/apply_worker.py` `ApplyWorker.process_one(now)` consumes the apply queue independently; otherwise no apply worker is generated
 - [ ] `<svc>/orchestrator.py` ticks every N seconds, claims queued accounts under a concurrency limit
 - [ ] `<svc>/web/app.py` FastAPI serves the console + `/api/*` endpoints matching `web-ui-spec.md` §8 and `excel-spec.md`
 - [ ] `<svc>/web/templates/index.html` generated strictly per `web-ui-spec.md` (简体中文, 复制日志, single file, ≤ 1600 LOC)
@@ -14,13 +14,23 @@ Goal: turn the single-account runner into a long-running scheduler that drives m
 - [ ] All items in `web-ui-spec.md` §12–§13 and `excel-spec.md` §6 verification checklists pass
 - [ ] `run_service.py` at project root: single-instance lock + **二次启动只打开已有 WebUI** + port avoidance + auto-open browser
 - [ ] `<svc>/runtime.py` writes `.run/service/endpoint.json` while running; second process reads it and exits after `webbrowser.open`
-- [ ] Crash recovery: restarting the service requeues `running` accounts and `in_flight` apply tasks
+- [ ] Crash recovery: restarting the service requeues `running` accounts and, when present, `in_flight` async tasks
 
 ## Read First
 
-If the user has provided their own requirements doc, read it now. Otherwise, copy `templates/requirements.md` to `docs/通用需求说明.md` and **adapt** the placeholders (`<PLATFORM>`, `<DOMAIN>`, captcha kind, quotas) to the actual site. The skeleton is the same; numbers and labels differ.
+Read `docs/API_REQUIREMENTS.md` first, then read the user-provided requirements doc if any. Otherwise, copy `templates/requirements.md` to `docs/通用需求说明.md` and **adapt** the placeholders (`<PLATFORM>`, `<DOMAIN>`, captcha kind, quotas, selected optional capabilities) to the actual site.
+
+Capability-dependent rules:
+
+- If credit application is in scope, include `apply_queue`, `credit_applications`, `ApplyWorker`, waiting-apply states, and credit UI/API surfaces.
+- If the site has no credit-application flow, omit `apply_queue` and `credit_applications` unless another selected flow needs an async queue; `waiting_apply` should not be a reachable account state.
+- If `购卡 / 充值` is selected, include card fields and `/api/accounts/{id}/recharge`; otherwise keep card columns only if the user still needs them for import compatibility.
+- If `注册` is selected, add registration service/API actions separately from account import; do not assume every imported account should be auto-registered.
+- If `学科列表 / 分类列表` is not selected and the site does not need subject requirements, simplify `requirements_json` and UI fields to the confirmed requirement model.
 
 ## Schema (SQLite WAL)
+
+The schema below is the full learning + credit-application shape. Remove or adapt optional tables/columns when the confirmed scope does not include the corresponding capability.
 
 ```sql
 PRAGMA journal_mode=WAL;
@@ -87,26 +97,28 @@ Account.status: queued | running | waiting_apply | retrying | completed | failed
 apply_queue.status: pending | in_flight | succeeded | dead | skipped
 ```
 
+If credit application is not in scope, omit `waiting_apply` and all `apply_queue` status handling from the state machine.
+
 ## Account State Machine Rules
 
 | Transition | Trigger |
 |------------|---------|
 | `queued / retrying → running` | `claim_next_queued()` atomic UPDATE within tx |
-| `running → completed` | worker finishes, all courses have `state == applied` |
-| `running → waiting_apply` | learning side done but apply queue has pending |
+| `running → completed` | worker finishes, all in-scope work is done (`applied` when credit is in scope, otherwise learned/exam-complete) |
+| `running → waiting_apply` | credit application in scope and learning side done but apply queue has pending |
 | `running → retrying` | transient failure, `retry_count++`, `queued_at = now+60` |
 | `running → failed` | hard failure (auth, business code) or `retry_count` exceeded |
 | `* → queued` (recovery) | service restart, status was `running` |
 | `* → paused` | manual pause via API |
 
-`waiting_apply` does NOT count against the learning concurrency limit. This is critical — otherwise the apply queue starves the learning side.
+When credit application is in scope, `waiting_apply` does NOT count against the learning concurrency limit. This is critical — otherwise the apply queue starves the learning side.
 
 ## Orchestrator Tick
 
 ```python
 def tick(self):
     now = time.time()
-    # 1) apply side runs always, even when paused (drains backlog)
+    # 1) optional apply side runs always, even when paused (drains backlog)
     try: self.apply_worker.process_one(now)
     except Exception: pass
     # 2) learning side: paused short-circuits
@@ -129,31 +141,32 @@ The worker re-uses phase 4's `CourseRunner` for the actual learning, plus higher
 
 ```
 run_once(account):
-    1. ensure_session(account.username, account.password, account.extra.cookies, probe=list_subjects)
+    1. ensure_session(account.username, account.password, account.extra.cookies, probe=<cheapest confirmed authenticated API>)
        - If reuse failed and login is rate-limited -> requeue with delay
        - If reuse failed and credentials are wrong -> failed (do not retry)
     2. If no course_results in extra OR forced reassign:
-       a. Build Requirement list from account.requirements
+       a. Build Requirement list from account.requirements when the confirmed scope needs requirements
        b. Fetch platform catalog + merge existing progress (applied / learned-not-applied / in-progress)
-       c. Label each candidate progress_tier + subject_tier (see "Course selection priority" below)
-       d. Optional: AI subject mapping (rule match first); persist matched_requirement_key when set
-       e. Sort by (progress_tier, subject_tier, project_id), then DP/greedy to hit credit target — higher tiers enter the plan first
+       c. Label each candidate progress_tier + subject_tier when subject requirements are enabled (see "Course selection priority" below)
+       d. Optional: AI subject mapping only when needed (rule match first); persist matched_requirement_key when set
+       e. Sort by (progress_tier, subject_tier, project_id), then DP/greedy to hit credit target when credit/requirement targets exist
        f. Assign queue_rank 0..n in that sorted order; preserve platform state (applied/learned/running), do not wipe
        g. Write course_results to extra, status -> queued, return (next tick will learn)
     3. Daily gate: before 08:00 Asia/Shanghai -> push queued_at to today 08:00, return
     4. Learning gate:
-       - any course state == "learned" -> waiting_apply (apply worker handles it), return
+       - if credit application is in scope: any course state == "learned" -> waiting_apply (apply worker handles it), return
        - any course daily_learn_date == today -> already learned 1 today, push to tomorrow 08:00
        - among courses with state in ("", "running"), pick smallest queue_rank (skip applied/failed/skipped)
     5. Run phase-4 runner on the chosen course
     6. Persist results:
-       - success -> course.state = learned, push apply_queue with next_attempt_at = tomorrow 08:00, status -> waiting_apply
+       - success + credit in scope -> course.state = learned, push apply_queue with next_attempt_at = tomorrow 08:00, status -> waiting_apply
+       - success + no credit in scope -> course.state = learned/completed per site, continue or complete account
        - retryable failure -> status retrying, retry_count++, queued_at = now+60
        - hard failure -> status failed, failed_phase = learning
        - all courses done -> completed
 ```
 
-Use `extra["phase"]` (e.g. `"login" / "assigning" / "learning" / "waiting_apply" / "idle"`) so the UI can show what the worker is currently doing.
+Use `extra["phase"]` (e.g. `"login"` / `"assigning"` / `"learning"` / `"waiting_apply"` when credit is in scope / `"idle"`) so the UI can show what the worker is currently doing.
 
 ## Course selection priority (fixed)
 
@@ -163,8 +176,8 @@ Same ordering for **building the plan** (`course_planner`) and **picking the nex
 
 | Value | Tier | Meaning |
 |-------|------|---------|
-| `0` | Applied | Credit already applied on platform (`state=applied` or equivalent) |
-| `1` | Learned, not applied | Study/exam done, credit pending (`state=learned` or equivalent) |
+| `0` | Applied / completed | Credit already applied on platform (`state=applied` or equivalent), or completed learning when credit application is not in scope |
+| `1` | Learned, not applied | Study/exam done, credit pending (`state=learned` or equivalent); only relevant when credit application is in scope |
 | `2` | In progress | Joined or partial progress (`state=running` or equivalent) |
 | `3` | Not started | New candidate (`state=""`) |
 
@@ -186,7 +199,7 @@ After sorting all units in the plan by `(progress_tier, subject_tier, project_id
 
 Implement in `<svc>/course_planner.py` (sort + knapsack) and `<svc>/account_pipeline.py` (platform merge). Each result row should store `progress_tier`, `subject_tier`, and optional `matched_requirement_key` for the Web UI.
 
-## ApplyWorker
+## ApplyWorker (only when credit application is in scope)
 
 ```
 process_one(now):
@@ -199,7 +212,7 @@ process_one(now):
     7. On business fail: attempts++, if >= max -> status = dead, course.state = failed
 ```
 
-Apply worker runs even when the scheduler is paused (the user's pause means "don't start new learning" — finishing already-earned credits is fine).
+Apply worker runs even when the scheduler is paused (the user's pause means "don't start new learning" — finishing already-earned credits is fine). If credit application is not in scope, do not create this worker; completion means learning/exam completion.
 
 ## Crash Recovery (run at start)
 
@@ -255,14 +268,14 @@ GET    /api/accounts?status=&search=&limit=&offset=&date_from=&date_to=
 POST   /api/accounts                           create one
 POST   /api/accounts/batch                     create many
 POST   /api/accounts/upload                    Excel
-GET    /api/accounts/{id}                      detail + runs + apply_tasks + credit_applications
+GET    /api/accounts/{id}                      detail + runs + optional apply_tasks / credit_applications
 PATCH  /api/accounts/{id}                      partial update
 DELETE /api/accounts/{id}
 POST   /api/accounts/{id}/requeue
 POST   /api/accounts/{id}/top
 POST   /api/accounts/{id}/force_relogin        clear cookies, next tick = fresh login
 POST   /api/accounts/{id}/reset                clear course state + cookies, keep credentials
-POST   /api/accounts/{id}/recharge             optional, if site has recharge cards
+POST   /api/accounts/{id}/recharge             optional, only if site has confirmed recharge/card flow
 POST   /api/scheduler/limit                    {limit: int}
 POST   /api/scheduler/pause
 POST   /api/scheduler/resume
@@ -358,7 +371,7 @@ if __name__ == "__main__":
 
 1. SQLite tables created, row counts.
 2. Web UI URL (e.g. `http://127.0.0.1:17865`).
-3. One end-to-end test: add the test account via UI, watch it move queued → running → waiting_apply → completed; on a failed account, verify **复制日志** copies `error_log_text`.
+3. One end-to-end test: add the test account via UI, watch it move through the in-scope states (`queued → running → waiting_apply → completed` when credit is in scope, otherwise `queued → running → completed`); on a failed account, verify **复制日志** copies `error_log_text`.
 4. 导出 xlsx → 确认 A–J 列中文表头与模板完全一致；K 列及以后为追加的系统列（状态、说明…）。
 5. **二次启动**：服务运行中再执行 `python run_service.py` → 仅打开浏览器，进程数不增加。
 6. Ask: "OK to enter phase 6 (one-click start + single-file build)?"
@@ -366,7 +379,7 @@ if __name__ == "__main__":
 ## Pitfalls
 
 - **Threading + SQLite**: open new connections per call (`sqlite3.connect(check_same_thread=False)` + WAL). Do not share a connection across worker threads.
-- **`apply_queue` UNIQUE conflicts**: use `INSERT ... ON CONFLICT(account_id,project_id) DO UPDATE SET ...` for idempotent enqueue.
+- **`apply_queue` UNIQUE conflicts**: when credit application is in scope, use `INSERT ... ON CONFLICT(account_id,project_id) DO UPDATE SET ...` for idempotent enqueue.
 - **Active worker counter leak**: wrap the worker call in `try/finally self._active -= 1`. A leak here causes the scheduler to think it's at capacity forever.
 - **Polling every 1s**: don't. 5s is fine for the UI; the scheduler tick can be 2-3s.
 - **`force_relogin` should NOT wipe `course_results`**: only `reset` does that. Two different operations.

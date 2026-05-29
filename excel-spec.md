@@ -3,6 +3,8 @@
 Phase 5 的账号批量导入、模板下载、全量导出**必须**遵守本规格。  
 实现前 Read 本文件；生成或修改 xlsx 时同时 Read **`spreadsheet` skill**（`~/.agents/skills/spreadsheet/SKILL.md`）。
 
+同时 Read `docs/API_REQUIREMENTS.md`：列名和顺序保持本规格的兼容形状，但字段是否参与业务逻辑由用户确认的能力范围决定。
+
 ---
 
 ## 1. 语言与命名（全部中文）
@@ -39,13 +41,15 @@ Phase 5 的账号批量导入、模板下载、全量导出**必须**遵守本�
 
 \* 至少一组「学科+学分」完整，否则该行导入失败并在结果里中文说明。
 
+若 `docs/API_REQUIREMENTS.md` 未选择学科/学分相关需求，可将 D–G 视为可空备注型需求字段，不得因为缺少学科/学分而导入失败。若未选择 `购卡 / 充值`，H/I 必须可空且不触发充值逻辑。
+
 ### 填写说明 Sheet 2（固定段落）
 
 至少包含：
 
 1. 表头不可改字、不可调列顺序  
 2. 账号、密码必填  
-3. 学科/学分成对填写；学分支持 0.5  
+3. 学科/学分成对填写；学分支持 0.5（若本项目未启用学科需求，则可留空）
 4. 示例一行（虚构数据）  
 
 ---
@@ -102,7 +106,7 @@ Phase 5 的账号批量导入、模板下载、全量导出**必须**遵守本�
 
 1. 最近一次 `runs` 的 `logs_json` 展开  
 2. `status_msg`  
-3. `extra.phase` + `apply_queue.last_error`  
+3. `extra.phase` + optional async queue error such as `apply_queue.last_error` when credit application is in scope per `docs/API_REQUIREMENTS.md`
 
 列表 API `GET /api/accounts` 的每项在 `status ∈ {failed, retrying}` 时附带 `error_log_text`（其他状态可省略或空字符串）。  
 详情 API `GET /api/accounts/{id}` 始终附带 `error_log_text`。

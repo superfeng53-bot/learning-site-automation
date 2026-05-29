@@ -15,6 +15,8 @@
 3. **多账号并行逻辑**：学习侧并发、申请侧独立消费、日切推迟、错峰与上限控制。
 4. **Web 控制台**：运营人员如何观察、干预、导入导出与调参。
 
+本说明必须先对齐 `docs/API_REQUIREMENTS.md`。通用学习能力固定存在；考试与申请学分遵循「有则必选」——站点存在则必须实现；学科列表、注册、购卡/充值、其他站点特定流程只在用户已选择并确认时写入本说明、数据库、Web UI、Excel 和调度逻辑。
+
 ---
 
 ## 2. 系统形态
@@ -50,6 +52,24 @@ Python 3.9+ / FastAPI / Uvicorn / Pydantic / SQLite WAL
 zoneinfo / openpyxl / ddddocr / pycryptodome
 （可选）<LLM_VENDOR>，用于 <CLASSIFICATION_TASK>
 ```
+
+### 2.4 已确认能力范围
+
+来源：`docs/API_REQUIREMENTS.md`。
+
+| 类别 | 能力 | 处理方式 |
+|------|------|----------|
+| 必选 | 登录 / 会话保持 | 必须实现 |
+| 必选 | 账号信息获取 | 必须实现 |
+| 必选 | 课程列表获取 | 必须实现 |
+| 必选 | 课程信息和状态获取 | 必须实现 |
+| 必选 | 课程进度上报 | 必须实现 |
+| 必选（若存在） | 对应课程考试 | 站点存在考试时必须实现；不存在则记录跳过 |
+| 必选（若存在） | 申请学分 | 站点存在申请流程时必须实现；不存在则记录跳过 |
+| 可选 | 学科列表 / 分类列表 | <selected/skipped> |
+| 可选 | 注册 | <selected/skipped> |
+| 可选 | 购卡 / 充值 | <selected/skipped> |
+| 可选 | 其他 | <selected/skipped + 说明> |
 
 ---
 
@@ -121,9 +141,9 @@ zoneinfo / openpyxl / ddddocr / pycryptodome
 
 **`queue_rank` 赋值**：对纳入课表的全部单元按 `(progress_tier, subject_tier, project_id)` 排序后，依次赋 `0, 1, 2, …`。DP/贪心凑学分在**该顺序下**依次选取候选，已申请/已学完单元须保留在结果集中（计入完成度，不占当日学习配额逻辑由 §5.4 闸门处理）。
 
-**与账号状态的配合**：`state=learned` 的单元仍触发 §5.4 第 1 条（转 `waiting_apply`，不开新学）；在课表排序中它们位于 `progress_tier=1`，仅影响列表顺序与再分配时的入选优先级，不改变申请 Worker 行为。
+**与账号状态的配合**：当站点存在申请学分流程时，`state=learned` 的单元仍触发 §5.4 第 1 条（转 `waiting_apply`，不开新学）；在课表排序中它们位于 `progress_tier=1`，仅影响列表顺序与再分配时的入选优先级，不改变申请 Worker 行为。若站点无申请学分流程，学习/考试完成即可进入完成判定，不引入 `waiting_apply`。
 
-### 3.3 申请队列任务（apply_queue）
+### 3.3 申请队列任务（apply_queue，仅当站点存在申请学分流程时启用）
 
 | status | 含义 |
 |--------|------|
@@ -149,13 +169,13 @@ zoneinfo / openpyxl / ddddocr / pycryptodome
 |------|------|
 | `queued` | 等待领取 |
 | `running` | 学习 Worker 执行中 |
-| `waiting_apply` | 学习完成，申请 Worker 接管 |
+| `waiting_apply` | 学习完成，申请 Worker 接管（仅当站点存在申请学分流程时启用） |
 | `retrying` | 可重试 |
 | `completed` | 全部成功 |
 | `failed` | 终态失败 |
 | `paused` | 人工暂停 |
 
-**关键约束**：`waiting_apply` 不占学习并发槽位。
+**关键约束**：站点存在申请学分流程时，`waiting_apply` 不占学习并发槽位。
 
 ### 4.2 运行阶段（extra.phase）
 
@@ -164,7 +184,7 @@ zoneinfo / openpyxl / ddddocr / pycryptodome
 | `login` | 登录 / 会话校验 |
 | `assigning` | 资源映射 + 计划生成 |
 | `learning` | 主流程执行 |
-| `waiting_apply` | 等待异步申请 |
+| `waiting_apply` | 等待异步申请（仅当站点存在申请学分流程时启用） |
 | `idle` | 已全部完成 |
 
 ---
@@ -197,7 +217,7 @@ zoneinfo / openpyxl / ddddocr / pycryptodome
 ### 5.4 学习前闸门
 
 按顺序：
-1. 有 `state == "learned"` 的单元 → `waiting_apply`（申请侧处理，本步不开新学）
+1. 若站点存在申请学分流程且有 `state == "learned"` 的单元 → `waiting_apply`（申请侧处理，本步不开新学）
 2. 今日已学完 <MAX_LEARN_PER_DAY> 门 → 推迟到明日 8:00
 3. 在 `state` 为 `""` 或 `running` 的单元中，选 **`queue_rank` 最小** 的一门（排序已在分配时按 §3.2.1 固化；等价于优先续学「正在学」，再按学科档选未开始）
 4. 跳过 `state` 为 `applied` / `failed` / `skipped` 的单元（已申请仅保留在课表中展示与完成度统计）
@@ -210,14 +230,15 @@ zoneinfo / openpyxl / ddddocr / pycryptodome
 
 | 结果 | 调度器动作 |
 |------|-----------|
-| 成功 | `state=learned`，写 `apply_queue`（`next_attempt_at=次日 8:00`），账号 `waiting_apply` |
+| 成功且站点存在申请学分流程时 | `state=learned`，写 `apply_queue`（`next_attempt_at=次日 8:00`），账号 `waiting_apply` |
+| 成功且站点无申请学分流程时 | `state=learned` 或站点等价完成态，继续下一门或账号 `completed` |
 | 可重试失败 | `retrying`，`retry_count+1`，60s 后重试；达上限 → `failed` |
 | 不可重试 | `failed` |
 | 全部完成 | `completed` |
 
 ---
 
-## 6. 申请侧（ApplyWorker）
+## 6. 申请侧（ApplyWorker，仅当站点存在申请学分流程时启用）
 
 每次 tick 调用 `ApplyWorker.process_one()`：
 
@@ -228,7 +249,7 @@ zoneinfo / openpyxl / ddddocr / pycryptodome
 5. 限频 → `next_attempt_at += <APPLY_RATE_BACKOFF_SEC>`
 6. 业务失败 → `attempts+1`；达上限（<MAX_APPLY_ATTEMPTS>）→ `dead`，单元 `state=failed`
 
-**申请不受学习暂停影响。**
+**申请不受学习暂停影响。** 若站点无申请学分流程，本节整体删除或改为「无异步申请队列；学习/考试完成即为终态」。
 
 ---
 
@@ -289,12 +310,12 @@ zoneinfo / openpyxl / ddddocr / pycryptodome
 
 ## 13. 复现检查清单
 
-- [ ] 账号主状态机（7 种）与学习/申请阶段分离
-- [ ] 学习队列与申请队列分通道，`waiting_apply` 不占学习并发
+- [ ] 账号主状态机与已确认能力范围一致（站点存在申请学分流程时包含 `waiting_apply`，否则不出现）
+- [ ] 站点存在申请学分流程时，学习队列与申请队列分通道，`waiting_apply` 不占学习并发
 - [ ] 单账号管线：Token 复用 → 分配 → 日闸门 → 学习 → 结果归并
 - [ ] 课程 `progress_tier` / `subject_tier` / `queue_rank` 与 §3.2.1 选课优先级一致
-- [ ] 日切 8:00 固定，每日 <MAX_LEARN_PER_DAY> 学，每日 <MAX_APPLY_PER_DAY> 申
-- [ ] 申请优先：有 `learned` 时不开新学
+- [ ] 日切 8:00 固定，每日 <MAX_LEARN_PER_DAY> 学；站点存在申请学分流程时每日 <MAX_APPLY_PER_DAY> 申
+- [ ] 站点存在申请学分流程时申请优先：有 `learned` 时不开新学
 - [ ] 并发可调、可暂停、活跃计数准确（finally 释放）
 - [ ] 崩溃恢复不打死账号
 - [ ] Web：总览、列表、筛选、展开详情、操作、定时刷新

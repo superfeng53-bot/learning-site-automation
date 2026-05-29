@@ -19,7 +19,7 @@ description: learning-site-automation 专用登录/API 侦察。只用 cursor-id
 - `项目根`：绝对路径
 - `任务类型`：`phase1-login` 或 `phase2-domain`
 - `登录 URL`（Phase 1）
-- `domain` 名称（Phase 2，如 `course` / `study` / `exam`；**单次最多 1–2 个**）
+- `domain` 名称（Phase 2，如 `member` / `course` / `study` / `exam`；**单次最多 1–2 个，且必须已在 `docs/API_REQUIREMENTS.md` 确认**）
 - 测试账号：见 `data/account.json`（只读，勿输出密码）
 - 已登录 cookie（Phase 2）：见 `data/cookies.json`
 
@@ -33,11 +33,13 @@ description: learning-site-automation 专用登录/API 侦察。只用 cursor-id
 
 ## Phase 2 产出
 
-对已登录会话，用内置浏览器手动完成该 domain 的用户操作，将每个 endpoint 写入：
+先读 `docs/API_REQUIREMENTS.md`。对已登录会话，只针对 confirmed domain 用内置浏览器手动完成该 domain 的用户操作，将每个 endpoint 写入：
 
 `docs/api-discovery/<domain>.md`
 
 须包含：method、path、content-type、请求字段、响应形状样本、已知失败码、必要 headers。
+
+如果任务要求侦察未确认的 optional domain（如注册、购卡/充值、其他站点特定流程），停止并让父 agent 先向用户确认，不要自行扩大范围。`credit` 与 `exam` 一样属于有则必选：仅当 `docs/API_REQUIREMENTS.md` 已记录为 confirmed 或 mandatory-if-present 时才侦察。
 
 ## 浏览器工作流（摘要）
 
