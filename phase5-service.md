@@ -10,7 +10,7 @@ Goal: turn the single-account runner into a long-running scheduler that drives m
 - [ ] `<svc>/orchestrator.py` ticks every N seconds, claims queued accounts under a concurrency limit
 - [ ] `<svc>/web/app.py` FastAPI serves the console + `/api/*` endpoints matching `web-ui-spec.md` §8 and `excel-spec.md`
 - [ ] `<svc>/web/templates/index.html` generated strictly per `web-ui-spec.md` (简体中文, 复制日志, single file, ≤ 1600 LOC)
-- [ ] `<svc>/web/excel_io.py` (or equivalent) implements import/export per `excel-spec.md` (中文文件名/表头, 导出列对齐)
+- [ ] `<svc>/web/excel_io.py` (or equivalent) implements import/export per `excel-spec.md`（中文文件名/Sheet 名/表头字段名，导出列对齐）
 - [ ] All items in `web-ui-spec.md` §12–§13 and `excel-spec.md` §6 verification checklists pass
 - [ ] `run_service.py` at project root: single-instance lock + **二次启动只打开已有 WebUI** + port avoidance + auto-open browser
 - [ ] `<svc>/runtime.py` writes `.run/service/endpoint.json` while running; second process reads it and exits after `webbrowser.open`
@@ -134,14 +134,17 @@ run_once(account):
        - If reuse failed and credentials are wrong -> failed (do not retry)
     2. If no course_results in extra OR forced reassign:
        a. Build Requirement list from account.requirements
-       b. Optional: AI subject mapping (e.g. zhipuai GLM)
-       c. Plan courses (DP knapsack to hit credit target)
-       d. Write course_results to extra, status -> queued, return (next tick will learn)
+       b. Fetch platform catalog + merge existing progress (applied / learned-not-applied / in-progress)
+       c. Label each candidate progress_tier + subject_tier (see "Course selection priority" below)
+       d. Optional: AI subject mapping (rule match first); persist matched_requirement_key when set
+       e. Sort by (progress_tier, subject_tier, project_id), then DP/greedy to hit credit target — higher tiers enter the plan first
+       f. Assign queue_rank 0..n in that sorted order; preserve platform state (applied/learned/running), do not wipe
+       g. Write course_results to extra, status -> queued, return (next tick will learn)
     3. Daily gate: before 08:00 Asia/Shanghai -> push queued_at to today 08:00, return
     4. Learning gate:
        - any course state == "learned" -> waiting_apply (apply worker handles it), return
        - any course daily_learn_date == today -> already learned 1 today, push to tomorrow 08:00
-       - pick course with smallest queue_rank that is not done today
+       - among courses with state in ("", "running"), pick smallest queue_rank (skip applied/failed/skipped)
     5. Run phase-4 runner on the chosen course
     6. Persist results:
        - success -> course.state = learned, push apply_queue with next_attempt_at = tomorrow 08:00, status -> waiting_apply
@@ -151,6 +154,37 @@ run_once(account):
 ```
 
 Use `extra["phase"]` (e.g. `"login" / "assigning" / "learning" / "waiting_apply" / "idle"`) so the UI can show what the worker is currently doing.
+
+## Course selection priority (fixed)
+
+Same ordering for **building the plan** (`course_planner`) and **picking the next unit to learn** (`queue_rank`). Authoritative Chinese text: `templates/requirements.md` §3.2.1.
+
+### Primary key — `progress_tier` (lower = sooner)
+
+| Value | Tier | Meaning |
+|-------|------|---------|
+| `0` | Applied | Credit already applied on platform (`state=applied` or equivalent) |
+| `1` | Learned, not applied | Study/exam done, credit pending (`state=learned` or equivalent) |
+| `2` | In progress | Joined or partial progress (`state=running` or equivalent) |
+| `3` | Not started | New candidate (`state=""`) |
+
+### Secondary key — `subject_tier` (lower = sooner)
+
+| Value | Tier | Meaning |
+|-------|------|---------|
+| `0` | Required | Matches a slot in `requirements_json` (学科1 / 学科2) |
+| `1` | Public | Platform "公共" category (site-specific IDs/labels in `config.py`) |
+| `2` | Other | Neither of the above |
+
+### Tertiary key — stable tie-break
+
+Same tier → sort by `project_id` (or platform course id) lexicographically.
+
+### `queue_rank`
+
+After sorting all units in the plan by `(progress_tier, subject_tier, project_id)`, assign `queue_rank = 0, 1, 2, …`. DP/greedy walks candidates in that order so applied and learned units stay in the plan and are preferred when filling the schedule.
+
+Implement in `<svc>/course_planner.py` (sort + knapsack) and `<svc>/account_pipeline.py` (platform merge). Each result row should store `progress_tier`, `subject_tier`, and optional `matched_requirement_key` for the Web UI.
 
 ## ApplyWorker
 
@@ -200,18 +234,16 @@ The console is **specified, not templated**: read **`web-ui-spec.md`** and gener
 
 **Recommended split** (see `cursor-agent-playbook.md` §4): dedicated sub-agent for `index.html`; parent integrates into FastAPI route.
 
-## Excel Import / Export
+## Excel 导入/导出
 
-Read **`excel-spec.md`** before implementing. When generating xlsx, also Read the **`spreadsheet` skill** (`~/.agents/skills/spreadsheet/SKILL.md`).
+面向运营的 Excel：**文件名、Sheet 名、表头字段名全部中文**。实现前 Read **`excel-spec.md`**；生成 xlsx 时同时 Read **`spreadsheet` skill**（`~/.agents/skills/spreadsheet/SKILL.md`）。
 
-Summary:
+摘要（列规则以 `excel-spec.md` 为准，此处不重复）：
 
-- Template: `{平台中文名}账号模板.xlsx`, sheets `账号列表` + `填写说明`, headers `姓名/账号/密码/学科1/学分1/…` (all Chinese)
-- Export: **same A–J columns as import**, then append `状态/说明/重试次数/创建时间/更新时间/最近运行结果/错误日志`
-- Import: Chinese headers only; export file must be re-importable (ignore trailing columns)
-- Backend exposes `error_log_text` on list (failed/retrying) and detail APIs for UI copy button
-
-Do **not** duplicate column rules here — `excel-spec.md` is authoritative.
+- 模板：`{平台中文名}账号模板.xlsx`，Sheet `账号列表` + `填写说明`，表头 `姓名/账号/密码/学科1/学分1/…`（全部中文）
+- 导入：只认中文表头；英文表头行报错并中文提示；导出文件可再次导入（忽略 K 列及以后）
+- 导出：前 A–J 列与导入模板完全一致，后追加 `状态/说明/重试次数/创建时间/更新时间/最近运行结果/错误日志`
+- 后端为列表（failed/retrying）与详情 API 提供 `error_log_text`，供 Web UI「复制日志」使用
 
 ## FastAPI Endpoints (canonical surface)
 
@@ -234,8 +266,8 @@ POST   /api/accounts/{id}/recharge             optional, if site has recharge ca
 POST   /api/scheduler/limit                    {limit: int}
 POST   /api/scheduler/pause
 POST   /api/scheduler/resume
-GET    /api/template                           Excel template download
-GET    /api/export                             full export Excel
+GET    /api/template                           下载中文 Excel 模板
+GET    /api/export                             导出中文 Excel（表头与模板对齐）
 GET    /api/ai/config                          read .run/ai_config.json (if AI mapping used)
 POST   /api/ai/config
 POST   /api/ai/test
@@ -327,7 +359,7 @@ if __name__ == "__main__":
 1. SQLite tables created, row counts.
 2. Web UI URL (e.g. `http://127.0.0.1:17865`).
 3. One end-to-end test: add the test account via UI, watch it move queued → running → waiting_apply → completed; on a failed account, verify **复制日志** copies `error_log_text`.
-4. Export xlsx → confirm A–J headers match template; K+ are appended system columns.
+4. 导出 xlsx → 确认 A–J 列中文表头与模板完全一致；K 列及以后为追加的系统列（状态、说明…）。
 5. **二次启动**：服务运行中再执行 `python run_service.py` → 仅打开浏览器，进程数不增加。
 6. Ask: "OK to enter phase 6 (one-click start + single-file build)?"
 

@@ -353,7 +353,9 @@ cursor pointer（折叠时）
 .input::placeholder { color: var(--c-text-muted); }
 ```
 
-**Excel 上传区 `.upload-zone`**：虚线 border `2px dashed var(--c-border-strong)`，圆角 `var(--r-md)`，`padding 20px`，居中；拖拽悬停时 border 变 primary，背景 `var(--c-primary-soft)`，有 `dragover / dragleave` 事件。
+**Excel 上传区 `.upload-zone`**：虚线 border `2px dashed var(--c-border-strong)`，圆角 `var(--r-md)`，`padding 20px`，居中；拖拽悬停时 border 变 primary，背景 `var(--c-primary-soft)`，有 `dragover / dragleave` 事件。上传文件须符合 **`excel-spec.md`**：Sheet 名与表头字段名**全部中文**（姓名、账号、密码…），禁止英文列名。
+
+**表单字段标签**（与 Excel 导入列对齐，全部中文）：姓名、账号、密码、学科1、学分1、学科2、学分2、卡号、卡号密码、备注。
 
 **表单底部操作行**：右对齐，`display flex justify-content flex-end gap 10px`；包含「导入 Excel」（outline 按钮）和「添加」（primary 按钮 + `<kbd>N</kbd>` 提示）。
 
@@ -580,7 +582,7 @@ API：`await window.ui.confirm({ title, body, okText, okTone:"danger|primary", c
 
 4 个 Tab：`基本信息 / 课程进度 / 申请队列 / 运行历史`
 
-**课程进度 Tab** 内每条课程显示：课程名 + 学科标签 + 学分 + 状态 Pill + 简短时间戳；用 `.kv` 或列表 flex 行展示。
+**课程进度 Tab** 内每条课程显示：课程名 + 学科标签 + 学分 + 状态 Pill + 简短时间戳；用 `.kv` 或列表 flex 行展示。**列表按 `queue_rank` 升序**（与 `templates/requirements.md` §3.2.1 选课优先级一致）。
 
 **运行历史 Tab** 内按时间倒序显示 runs，每条含开始时间、结果（成功/失败 Pill）、摘要文本；折叠/展开详细日志（`<details><summary>`）。
 
@@ -733,7 +735,7 @@ API：`await window.ui.confirm({ title, body, okText, okTone:"danger|primary", c
 - [ ] 抽屉 ESC 关闭；modal ESC 关闭；点遮罩关闭
 - [ ] 表头 sticky，长列表滚动时不消失
 - [ ] 单 HTML 文件总行数 ≤ 1600
-- [ ] 全页可见文案为简体中文（header、表头、toast、confirm、空态）
+- [ ] 全页可见文案为简体中文（header、表头、toast、confirm、空态）；Web 列表表头与 Excel 导入列名一致（中文）
 - [ ] 失败账号行有「复制日志」；点击后剪贴板与 `error_log_text` 完全一致
 - [ ] Stat tile 数值变化时有 countUp 动画
 - [ ] `running` 状态圆点有 pulse 动画

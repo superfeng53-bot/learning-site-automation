@@ -139,7 +139,7 @@ Use `scripts/init_project.py` to scaffold. See `phase1-login-recon.md`.
 
 - Python 3.9+, `requests`, `ddddocr`, `pycryptodome`, `fastapi` + `uvicorn`
 - Single inlined **`index.html`** — **简体中文** UI per `web-ui-spec.md`
-- `sqlite3` (WAL), `openpyxl` — import/export per **`excel-spec.md`** (中文文件名与表头)
+- `sqlite3` (WAL), `openpyxl` — import/export per **`excel-spec.md`**（中文文件名、Sheet 名与表头字段名）
 - `pyinstaller`; optional LLM for subject mapping
 
 ## Operator-facing Chinese requirements (fixed)
@@ -149,8 +149,9 @@ These apply to every generated project unless the user explicitly opts out:
 | Surface | Rule |
 |---------|------|
 | Web 控制台 | 全部简体中文；见 `web-ui-spec.md` §0 |
-| Excel 模板 | 文件名 `{平台}账号模板.xlsx`；sheet/表头中文；见 `excel-spec.md` §2 |
-| Excel 导出 | 前部列与导入模板完全一致；状态/日志等追加在后；见 `excel-spec.md` §3 |
+| Excel 模板 | 文件名 `{平台}账号模板.xlsx`；Sheet 名与表头字段名**全部中文**；见 `excel-spec.md` §2 |
+| Excel 导入 | 只解析中文表头（姓名/账号/密码/学科1…）；错误提示中文；见 `excel-spec.md` §2 |
+| Excel 导出 | 前 A–J 列与导入模板完全一致；状态/日志等中文列追加在后；见 `excel-spec.md` §3 |
 | 复制日志 | 失败/重试账号一键复制 `error_log_text`；见 `web-ui-spec.md` §4.12 + `excel-spec.md` §4 |
 | 启动与打包 | 一键启动、单实例、二次启动只开 WebUI、端口避让、单文件 PyInstaller、`{平台}_{日}_{月}` 命名、`console=True`；见 `phase5-service.md` + `phase6-packaging.md` |
 
@@ -179,7 +180,7 @@ Bundling **gap acceptance** or **scope cut** into the normal phase-gate confirma
 - Do NOT use WebFetch/curl to *discover* login or API endpoints before built-in browser recon is documented in `docs/`
 - Do NOT finish phases 1–5 in one chat without handoff files
 - Do NOT paste large browser JSON into chat — write `docs/` files
-- Do NOT use English UI labels or English Excel headers
+- Do NOT use English UI labels or English Excel headers / Sheet names / field names
 - Do NOT reorder export columns relative to import template
 - Do NOT use emoji in UI text; use plain Chinese labels
 - Do NOT skip `ui.confirm` / `ui.toast` patterns in web UI

@@ -278,6 +278,7 @@ cp ~/.cursor/skills/learning-site-automation/templates/agents/api-recon.md \
 - ❌ Phase 5 未读 `web-ui-spec.md` / `excel-spec.md` 就开始写 UI 或 xlsx  
 - ❌ 用英文 UI 文案「先跑通再说」  
 - ❌ 导出 Excel 重排导入列顺序  
+- ❌ Excel 表头用英文或拼音（如 `username`、`status`、`xingming`）  
 
 ---
 

@@ -85,7 +85,43 @@ zoneinfo / openpyxl / ddddocr / pycryptodome
 | `failed` | 失败（终态） |
 | `skipped` | 跳过（终态） |
 
-辅助字段：`daily_learn_date`（学完当天日期，用于每日配额判断）、`queue_rank`（全局排队序号）。
+辅助字段：
+
+| 字段 | 说明 |
+|------|------|
+| `daily_learn_date` | 学完当天日期，用于每日配额判断 |
+| `progress_tier` | 平台进度档（见 §3.2.1），数值越小越优先 |
+| `subject_tier` | 学科档（见 §3.2.1），数值越小越优先 |
+| `queue_rank` | 全局排队序号；由 `progress_tier` → `subject_tier` → 稳定次序（如 `project_id`）排序后从 0 递增赋值 |
+
+### 3.2.1 选课优先级（固定，分配与运行时共用）
+
+构建课表（分配阶段）与挑选下一门待学单元（学习闸门）**同一套多键排序**。`course_planner` / `AccountWorker` 不得另写一套规则。
+
+**第一键 — 平台进度档 `progress_tier`（越小越优先）**
+
+| 值 | 档 | 含义（与平台状态对齐后） |
+|----|-----|--------------------------|
+| `0` | 已申请 | 学分已在平台申请成功（`state=applied` 或平台等价终态） |
+| `1` | 学完未申请 | 学习/考试已完成，学分尚未申请（`state=learned` 或平台等价） |
+| `2` | 正在学 | 已选课或已有学习进度、未完结（`state=running` 或平台部分进度） |
+| `3` | 未开始 | 无平台进度的新候选（`state=""`） |
+
+**第二键 — 学科档 `subject_tier`（越小越优先）**
+
+| 值 | 档 | 含义 |
+|----|-----|------|
+| `0` | 所属学科 | 课程学科与账号 `requirements_json` 中某一需求槽（学科1/学科2）匹配 |
+| `1` | 公共学科 | 平台标记为「公共」类（站点在 `config.py` 维护标签/ID 列表） |
+| `2` | 其他学科 | 以上皆不是 |
+
+规则匹配（含可选 LLM 映射）须先于 LLM；映射结果写入单元字段 `matched_requirement_key`（如 `学科1`）供 UI 展示。
+
+**第三键 — 稳定次序**：同档内按 `project_id`（或平台课程 ID）字典序，保证可复现。
+
+**`queue_rank` 赋值**：对纳入课表的全部单元按 `(progress_tier, subject_tier, project_id)` 排序后，依次赋 `0, 1, 2, …`。DP/贪心凑学分在**该顺序下**依次选取候选，已申请/已学完单元须保留在结果集中（计入完成度，不占当日学习配额逻辑由 §5.4 闸门处理）。
+
+**与账号状态的配合**：`state=learned` 的单元仍触发 §5.4 第 1 条（转 `waiting_apply`，不开新学）；在课表排序中它们位于 `progress_tier=1`，仅影响列表顺序与再分配时的入选优先级，不改变申请 Worker 行为。
 
 ### 3.3 申请队列任务（apply_queue）
 
@@ -147,10 +183,11 @@ zoneinfo / openpyxl / ddddocr / pycryptodome
 
 1. 从 `requirements` 构建需求列表
 2. 调用 `<ASSIGNMENT_PIPELINE>`：
-   - 拉平台资源列表
-   - 可选 LLM 分类（`<LLM_MODEL>`，`temperature=0`）
-   - 候选生成 + 凑量算法（DP / 贪心）
-3. 写入 `extra["<DOMAIN>_results"]`，初始化 `state=""`，分配 `queue_rank`
+   - 拉平台资源列表，**合并**账号在平台上的已有进度（已申请 / 学完未申请 / 正在学）
+   - 为每条候选标注 `progress_tier`、`subject_tier`（规则见 §3.2.1）
+   - 可选 LLM 分类（`<LLM_MODEL>`，`temperature=0`）；规则匹配优先
+   - 按 §3.2.1 排序后做候选生成 + 凑量（DP / 贪心）；**高优先级档先入选课表**
+3. 写入 `extra["<DOMAIN>_results"]`：保留平台已有 `state`（`applied` / `learned` / `running` 不强行清空），新入选单元 `state=""`，并写入 `queue_rank`
 4. 分配完成 → `queued`
 
 ### 5.3 日切闸门
@@ -160,9 +197,10 @@ zoneinfo / openpyxl / ddddocr / pycryptodome
 ### 5.4 学习前闸门
 
 按顺序：
-1. 有 `state == "learned"` 的单元 → `waiting_apply`
+1. 有 `state == "learned"` 的单元 → `waiting_apply`（申请侧处理，本步不开新学）
 2. 今日已学完 <MAX_LEARN_PER_DAY> 门 → 推迟到明日 8:00
-3. 选 `queue_rank` 最小的待学单元
+3. 在 `state` 为 `""` 或 `running` 的单元中，选 **`queue_rank` 最小** 的一门（排序已在分配时按 §3.2.1 固化；等价于优先续学「正在学」，再按学科档选未开始）
+4. 跳过 `state` 为 `applied` / `failed` / `skipped` 的单元（已申请仅保留在课表中展示与完成度统计）
 
 ### 5.5 学习循环
 
@@ -236,12 +274,16 @@ zoneinfo / openpyxl / ddddocr / pycryptodome
 
 ---
 
-## 12. Web 控制台
+## 12. Web 控制台与 Excel 导入/导出
 
 - 单文件 HTML，内联 CSS + 原生 JS，无第三方 UI 库
 - 5s 轮询 `/api/stats` 与 `/api/accounts`
 - 展开行单独 GET `/api/accounts/{id}`
-- 导入模板：`<PLATFORM>账号模板.xlsx`，中文表头固定顺序
+- 导入/导出完整规格见 **`excel-spec.md`**（文件名、Sheet 名、表头字段名**全部中文**）
+- 导入模板：`<PLATFORM>账号模板.xlsx`，Sheet `账号列表` + `填写说明`
+- 导入列（A–J，顺序固定，**表头必须中文**）：姓名 | 账号 | 密码 | 学科1 | 学分1 | 学科2 | 学分2 | 卡号 | 卡号密码 | 备注
+- 导出：前 A–J 与模板一致；后追加 状态 | 说明 | 重试次数 | 创建时间 | 更新时间 | 最近运行结果 | 错误日志
+- 禁止英文/拼音列名（如 `username`）；导入只认中文表头；导出文件须可再次导入（忽略 K 列及以后）
 
 ---
 
@@ -250,13 +292,14 @@ zoneinfo / openpyxl / ddddocr / pycryptodome
 - [ ] 账号主状态机（7 种）与学习/申请阶段分离
 - [ ] 学习队列与申请队列分通道，`waiting_apply` 不占学习并发
 - [ ] 单账号管线：Token 复用 → 分配 → 日闸门 → 学习 → 结果归并
-- [ ] 课程 `state` 与 `queue_rank` 全局排序
+- [ ] 课程 `progress_tier` / `subject_tier` / `queue_rank` 与 §3.2.1 选课优先级一致
 - [ ] 日切 8:00 固定，每日 <MAX_LEARN_PER_DAY> 学，每日 <MAX_APPLY_PER_DAY> 申
 - [ ] 申请优先：有 `learned` 时不开新学
 - [ ] 并发可调、可暂停、活跃计数准确（finally 释放）
 - [ ] 崩溃恢复不打死账号
 - [ ] Web：总览、列表、筛选、展开详情、操作、定时刷新
-- [ ] 导入去重、导出、模板下载
+- [ ] Excel 模板/导入/导出：文件名、Sheet 名、表头字段名均为中文（见 `excel-spec.md`）
+- [ ] 导入去重、导出列对齐、模板下载
 - [ ] 一键启动、单实例、二次启动只开 WebUI、端口避让、打包单文件与 `{平台}_{日}_{月}` 命名
 
 ---
