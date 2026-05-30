@@ -433,16 +433,19 @@ tbody td {
 | 学科·学分 | auto | 小 pill 标签列表，`gap 4px flex-wrap wrap` |
 | 状态 | 120px | Pill 组件 |
 | 说明 | auto | `max-width` + `title` 全文；`overflow hidden text-overflow ellipsis white-space nowrap` |
-| 操作 | 160px | 按钮组 |
+| 操作 | 220px | 按钮组（固定 3 个，见下） |
 
-**操作列按钮组**：`display flex gap 6px align-items center`
+**操作列按钮组（固定 3 个，任意账号状态均显示，不得增减或按状态隐藏）**：`display flex gap 6px align-items center flex-wrap wrap`
 
-- `详情`：`.btn-ghost .btn-sm`
-- `重入队`：`.btn-ghost .btn-sm`（仅 failed/paused 显示）
-- `复制日志`：`.btn-sm .btn-outline`（仅 failed/retrying 显示，见 §6.12）
-- 删除：`.btn-icon .btn-ghost` 垃圾桶 SVG，hover 时 color `var(--c-danger)`
+| 按钮 | 样式 | 行为 |
+|---|---|---|
+| 重入队 | `.btn-ghost .btn-sm` | `POST /api/accounts/{id}/requeue`；语义见 §10.1 |
+| 编辑后重入队 | `.btn-outline .btn-sm` | 打开编辑模态（字段同 §6.5 添加表单）；确认后 `PATCH /api/accounts/{id}` 且 body 含 `"requeue": true` |
+| 删除 | `.btn-icon .btn-ghost` 垃圾桶 SVG，hover 时 color `var(--c-danger)` | `DELETE /api/accounts/{id}`；删除该账号全部数据 |
 
-**姓名列**：`font-weight 600`，可配合账号列合并显示（姓名在上 14px，账号在下 11px muted mono）—— 如此可去掉独立账号列，节省宽度；选一种固定。
+**禁止**在操作列放置「详情」「复制日志」「强制重登」「重置课程」等第四按钮；上述能力通过其他入口提供（见 §6.13、§6.17）。
+
+**姓名列**：`font-weight 600`，**点击姓名**打开详情抽屉（只读）；可配合账号列合并显示（姓名在上 14px，账号在下 11px muted mono）—— 如此可去掉独立账号列，节省宽度；选一种固定。
 
 ### 6.8 移动端卡片 `.mobile-card`（≤ 640px）
 
@@ -463,7 +466,7 @@ tbody td {
 2. 账号（mono 12px muted）
 3. 学科·学分标签行
 4. 说明（如有，muted 12px 两行省略）
-5. 操作行（flex gap 8px）：详情 / 复制日志 / 删除
+5. 操作行（flex gap 8px flex-wrap）：重入队 / 编辑后重入队 / 删除（与桌面表格 §6.7 三按钮一致）
 
 ### 6.9 空态 `.empty-state`
 
@@ -563,7 +566,7 @@ API：`await window.ui.confirm({ title, body, okText, okTone:"danger|primary", c
 
 - **头 `.drawer-head`**：`padding 18px 20px`，`border-bottom`；左标题（600 weight）+ 右 × 关闭按钮
 - **体 `.drawer-body`**：`flex 1; overflow-y auto; padding 20px`
-- **尾 `.drawer-foot`**：`padding 14px 20px`，`border-top`；操作按钮（强制重登 / 重置课程 / 重入队）
+- **尾 `.drawer-foot`**：详情抽屉为**只读**，**不得**放置重入队 / 编辑 / 删除 / 强制重登 / 重置课程等操作按钮（账户操作仅在列表 §6.7 三按钮）。若需底部栏，仅放「关闭」或省略 `.drawer-foot`。
 
 **Tabs 在 drawer-body 内**（见 §6.14）
 
@@ -612,7 +615,7 @@ Tabs 根据 `docs/API_REQUIREMENTS.md` 生成：基础为 `基本信息 / 课程
 ### 6.17 复制日志按钮（必须）
 
 - 显示条件：`status === 'failed' || status === 'retrying'` 或 `error_log_text` 非空
-- 位置：表格操作列；详情抽屉「基本信息」Tab 末尾；移动端卡片 actions 行
+- 位置：**仅**详情抽屉「基本信息」Tab 末尾（**不在**表格操作列，操作列固定三按钮 §6.7）
 - 样式：`.btn-sm .btn-outline`，前置复制 SVG 图标
 - 点击行为：`navigator.clipboard.writeText(error_log_text)` → `ui.toast('已复制到剪贴板', 'success', 2000)`
 - 降级：`clipboard` 不可用时选中隐藏 `<textarea>` + `execCommand('copy')`
@@ -639,15 +642,16 @@ Tabs 根据 `docs/API_REQUIREMENTS.md` 生成：基础为 `基本信息 / 课程
 2. **header spinner**：`#loadingDot` 刷新中显示，完成后隐藏；不要常亮。
 3. **`#lastSync`**：`更新于 HH:MM:SS`；字体 mono 12px muted。
 4. **Stat tile 数字动效**：数值更新时 countUp 动画（100ms，整数）。
-5. **表格行点击**：仅「详情」按钮触发抽屉；整行不触发（避免 hit target 冲突）。
+5. **打开详情抽屉**：点击**姓名列**触发；整行与其他列不触发（避免与三操作按钮冲突）。
 6. **搜索防抖**：250ms。
 7. **添加成功**：清空表单 → 焦点回「姓名」→ toast 成功 → 立即 refresh。
 8. **Excel 上传**：`j.failed > 0` 用 warning toast，否则 success；消息格式 `导入：新增 X，跳过 Y，失败 Z`。
 9. **暂停/恢复**：根据 `data.paused` 切换两个按钮的 `[hidden]`。
-10. **删除/重置**：必须经 `ui.confirm`，`okTone:"danger"`，body 写明影响。
-11. **抽屉底部三按钮**：强制重登 / 重置课程（二次确认）/ 重入队。
-12. **数字输入**：并发 `min=1 max=50 step=1`；学分 `min=0 step=0.5`。
-13. **空态切换**：初次加载 → skeleton；数据到达 → 渐变 opacity `0→1`（200ms）；无数据 → empty-state。
+10. **删除**：必须经 `ui.confirm`，`okTone:"danger"`，body 写明将永久删除该账号及全部运行数据（含 cookies、课表、运行记录）。
+11. **重入队 / 编辑后重入队**：须 `ui.confirm`（`okTone:"primary"`），body 说明将清除登录后产生的运行数据但**保留 cookies 等登录指纹**（重入队）或**先保存表单再同等清除**（编辑后重入队）。若账号 `status === 'running'`，confirm 额外提示「将中断当前任务」。
+12. **编辑后重入队模态**：字段与 §6.5 添加表单一致（含密码；空密码表示不修改）；主按钮文案「保存并重入队」；取消不发请求。
+13. **数字输入**：并发 `min=1 max=50 step=1`；学分 `min=0 step=0.5`。
+14. **空态切换**：初次加载 → skeleton；数据到达 → 渐变 opacity `0→1`（200ms）；无数据 → empty-state。
 
 ---
 
@@ -676,11 +680,9 @@ Tabs 根据 `docs/API_REQUIREMENTS.md` 生成：基础为 `基本信息 / 课程
 | POST | `/api/accounts` | `{ display_name, username, password, requirements?:[{category, credits}], extra?:{...} }`，字段按 `docs/API_REQUIREMENTS.md` 启用 | `{ id }` |
 | POST | `/api/accounts/upload` | multipart `file` | `{ added, skipped, failed, errors? }` |
 | GET | `/api/accounts/{id}` | — | `{ ...account, error_log_text, extra{…}, apply_tasks[], runs[] }` |
-| PATCH | `/api/accounts/{id}` | 部分字段 | `{ ok: true }` |
-| DELETE | `/api/accounts/{id}` | — | `{ ok: true }` |
-| POST | `/api/accounts/{id}/requeue` | — | `{ ok: true }` |
-| POST | `/api/accounts/{id}/force_relogin` | — | `{ ok: true }` |
-| POST | `/api/accounts/{id}/reset` | — | `{ ok: true }` |
+| PATCH | `/api/accounts/{id}` | 部分字段；可选 `"requeue": true`（编辑后重入队，语义同 §10.1） | `{ ok: true }` |
+| DELETE | `/api/accounts/{id}` | — | `{ ok: true }`；删除账号行及 runs / apply_queue / 业务流水等全部关联数据 |
+| POST | `/api/accounts/{id}/requeue` | — | `{ ok: true }`；语义见 §10.1 |
 | POST | `/api/scheduler/limit` | `{ limit:int }` | `{ ok: true, limit }` |
 | POST | `/api/scheduler/pause` | — | `{ ok: true, paused: true }` |
 | POST | `/api/scheduler/resume` | — | `{ ok: true, paused: false }` |
@@ -690,6 +692,39 @@ Tabs 根据 `docs/API_REQUIREMENTS.md` 生成：基础为 `基本信息 / 课程
 错误：`{ detail: "<可读中文消息>" }`，HTTP 4xx/5xx。`api()` 包装在非 2xx 时 `throw new Error(detail)`，调用处 catch 后 `ui.toast(err.message, 'danger')`。
 
 **敏感字段**（`password`, `cookies`, `card_password`）必须从所有 GET 响应剥掉，用 `_safe_account()` 集中处理。
+
+### 10.1 账户操作语义（后端必须实现，与 UI 三按钮一一对应）
+
+#### 重入队（`POST …/requeue` 或 `PATCH …` + `"requeue": true`）
+
+**保留**（登录指纹，供下次 `ensure_session` 探活复用）：
+
+- `extra.cookies`
+- `extra.user_profile` 及站点定义的其它**纯会话/身份快照**字段（若有）
+- 账号凭据列：`display_name`、`username`、`password`、`requirements_json`
+- `extra` 中**账号配置型**字段（卡号、地区等导入/表单填写项，非运行期产出）
+
+**清除**（登录之后产生的运行数据）：
+
+- `extra.<DOMAIN>_results`、`extra.phase`、`extra.failed_phase`
+- `status` → `queued`；`status_msg`、`retry_count`、`failed_phase` 归零/清空；`queued_at` → 当前时间
+- 该账号的 `runs`、`apply_queue`、按日配额用的业务流水（如 `credit_applications`）
+- 列表/详情中的 `error_log_text` 来源字段
+
+**下次调度行为**：Worker 第一步 `ensure_session(cookies, probe=…)`；探活成功则**跳过登录**，从**分配/计划**起重新走登录后全流程（分配 → 日闸门 → 学习 → 申请等）。探活失败则走 `templates/requirements.md` §5.1 的常规登录流程。
+
+若账号当前为 `running`：先标记中断/释放 worker，再执行上述清除并入队。
+
+#### 编辑后重入队（`PATCH …` + `"requeue": true`）
+
+1. 合并 PATCH body 中的可编辑字段（密码为空则不改密码）。
+2. 执行与「重入队」相同的保留/清除规则并入队。
+
+#### 删除（`DELETE …/{id}`）
+
+删除 `accounts` 行及所有关联数据（含 cookies、课表、runs、apply_queue、流水）；不可恢复。
+
+**已废弃的 UI/API 面**：不再提供 `force_relogin`、`reset` 端点或按钮；「清 cookies 强制重登」与「只清课表」由「重入队」（保留 cookies、清运行数据）与「删除」覆盖。
 
 ---
 
@@ -719,7 +754,7 @@ Tabs 根据 `docs/API_REQUIREMENTS.md` 生成：基础为 `基本信息 / 课程
 - [ ] Header Logo 方块用渐变色背景（蓝→紫），不是纯色
 - [ ] Toast 有左侧 3px accent 色条 + 对应 tone 图标
 - [ ] Modal/Drawer 有 backdrop-blur 遮罩，而非纯色遮罩
-- [ ] Drawer 底部操作按钮固定在视窗底部，不随内容滚动
+- [ ] 详情抽屉为只读，账户操作仅在列表三按钮（重入队 / 编辑后重入队 / 删除）
 - [ ] 移动端（375px 宽）表格切换为卡片视图，无横向滚动
 - [ ] 所有按钮有 `:focus-visible` ring，且仅在键盘导航时显示
 - [ ] 运行历史条目可展开查看原始日志，使用 `<details>` 原生折叠
@@ -733,7 +768,8 @@ Tabs 根据 `docs/API_REQUIREMENTS.md` 生成：基础为 `基本信息 / 课程
 - [ ] 切到 iPhone SE（375×667），表格变卡片，无横向滚动
 - [ ] 切暗色主题，对比度无问题（标题、说明、徽章都清楚可读）
 - [ ] 按 `/` `N` `Space` `T` `Esc` `?` 都生效
-- [ ] 删除/重置先弹 confirm，取消后不发请求（DevTools Network 验证）
+- [ ] 删除 / 重入队 / 编辑后重入队先弹 confirm，取消后不发请求（DevTools Network 验证）
+- [ ] 操作列始终仅三按钮；复制日志仅在详情抽屉内
 - [ ] 假装 `/api/accounts` 返回 500：toast 报红，不卡死，下次轮询继续
 - [ ] 标签页切到后台 ≥ 30s，切回后立即触发刷新且 `#lastSync` 更新
 - [ ] 抽屉 ESC 关闭；modal ESC 关闭；点遮罩关闭

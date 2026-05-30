@@ -199,6 +199,16 @@ zoneinfo / openpyxl / ddddocr / pycryptodome
 4. 探活失败 → 清 Session + 全新登录
 5. 全新登录后持久化 `cookies` 与 `user_profile`
 
+### 5.1.1 运行中登录失效（自动重登，必须）
+
+与学习 tick 开头的探活不同，**业务调用过程中**若平台返回未登录/会话失效（由 `is_session_expired()` 判定）：
+
+1. 调用 `SessionManager.relogin_user()` **至多 1 次**，持久化新 `cookies` / `user_profile`
+2. **重试当前业务步骤 1 次**
+3. 仍失败 → 按 phase 3 重试矩阵区分可重试与硬失败（账号密码错误不得重登循环）
+
+Worker / ApplyWorker / phase-4 Runner 内所有 HTTP 业务层须统一走该路径，**不得**要求用户在 Web UI 手动触发重登。
+
 ### 5.2 分配阶段（全新登录或无计划时）
 
 1. 从 `requirements` 构建需求列表
@@ -297,6 +307,18 @@ zoneinfo / openpyxl / ddddocr / pycryptodome
 
 ## 12. Web 控制台与 Excel 导入/导出
 
+### 12.1 账户操作（固定三按钮）
+
+与 `web-ui-spec.md` §6.7、§10.1 一致；列表操作列**仅**：
+
+| 按钮 | 含义 |
+|------|------|
+| 重入队 | 保留 cookies 等登录指纹；清除登录后全部运行数据；下次探活成功则跳过登录，从分配起走完整登录后流程 |
+| 编辑后重入队 | 保存表单变更后执行与「重入队」相同的清除与入队 |
+| 删除 | 删除该账号及全部关联数据（含 cookies） |
+
+不提供「强制重登」「重置课程」等第四操作。详情抽屉只读；「复制日志」仅在抽屉内。
+
 - 单文件 HTML，内联 CSS + 原生 JS，无第三方 UI 库
 - 5s 轮询 `/api/stats` 与 `/api/accounts`
 - 展开行单独 GET `/api/accounts/{id}`
@@ -318,7 +340,8 @@ zoneinfo / openpyxl / ddddocr / pycryptodome
 - [ ] 站点存在申请学分流程时申请优先：有 `learned` 时不开新学
 - [ ] 并发可调、可暂停、活跃计数准确（finally 释放）
 - [ ] 崩溃恢复不打死账号
-- [ ] Web：总览、列表、筛选、展开详情、操作、定时刷新
+- [ ] 运行中登录失效自动重登（§5.1.1），不依赖 Web UI 手动操作
+- [ ] Web：总览、列表、筛选、展开详情、操作（固定三按钮 §12.1）、定时刷新
 - [ ] Excel 模板/导入/导出：文件名、Sheet 名、表头字段名均为中文（见 `excel-spec.md`）
 - [ ] 导入去重、导出列对齐、模板下载
 - [ ] 一键启动、单实例、二次启动只开 WebUI、端口避让、打包单文件与 `{平台}_{日}_{月}` 命名

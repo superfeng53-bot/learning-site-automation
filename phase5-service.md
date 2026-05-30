@@ -269,12 +269,10 @@ POST   /api/accounts                           create one
 POST   /api/accounts/batch                     create many
 POST   /api/accounts/upload                    Excel
 GET    /api/accounts/{id}                      detail + runs + optional apply_tasks / credit_applications
-PATCH  /api/accounts/{id}                      partial update
+PATCH  /api/accounts/{id}                      partial update; `"requeue": true` = 编辑后重入队
 DELETE /api/accounts/{id}
-POST   /api/accounts/{id}/requeue
+POST   /api/accounts/{id}/requeue              重入队（语义见 Account operations）
 POST   /api/accounts/{id}/top
-POST   /api/accounts/{id}/force_relogin        clear cookies, next tick = fresh login
-POST   /api/accounts/{id}/reset                clear course state + cookies, keep credentials
 POST   /api/accounts/{id}/recharge             optional, only if site has confirmed recharge/card flow
 POST   /api/scheduler/limit                    {limit: int}
 POST   /api/scheduler/pause
@@ -287,6 +285,27 @@ POST   /api/ai/test
 ```
 
 Sensitive fields (`password`, `cookies`, `card_password`) MUST be stripped from any GET response. Use a `_safe_account(d)` helper.
+
+### Account operations (fixed — must match `web-ui-spec.md` §6.7 + §10.1)
+
+Web UI exposes **exactly three** account actions. Implement backend helpers `requeue_account(id)` and `delete_account(id)`.
+
+| UI label | API | Semantics |
+|----------|-----|-----------|
+| 重入队 | `POST /api/accounts/{id}/requeue` | **Keep** `extra.cookies`, `extra.user_profile`, credentials, config-style `extra` fields. **Clear** all post-login runtime data: `<DOMAIN>_results`, `phase`, `failed_phase`, `runs`, `apply_queue`, quota ledgers, error logs; set `status=queued`, reset `retry_count`, refresh `queued_at`. Next tick: `ensure_session` → on probe success skip login and run full post-login pipeline (assign → gates → learn → apply). If account is `running`, abort worker first. |
+| 编辑后重入队 | `PATCH /api/accounts/{id}` with `"requeue": true` | Merge editable fields (empty password = no change), then same as requeue. |
+| 删除 | `DELETE /api/accounts/{id}` | Delete account row and **all** related rows (including cookies, course state, runs, apply_queue). |
+
+Do **not** expose `force_relogin` or `reset` endpoints to the UI; requeue + delete supersede them.
+
+### Session expiry during execution (mandatory)
+
+While a worker is running (learning, apply, assignment fetch, etc.), session expiry MUST trigger **automatic relogin**, not manual UI action:
+
+1. Detect via `is_session_expired()` (`phase3-stability.md`).
+2. `SessionManager.relogin_user()` at most **once** per failed step; persist new `cookies` / `user_profile`.
+3. Retry the current business call **once**; then apply the retry matrix (transient vs hard failure).
+4. Each tick still starts with `ensure_session(..., probe=...)`; probe failure → fresh login (`templates/requirements.md` §5.1, §5.1.1). See `phase3-stability.md` Retry Decision Matrix.
 
 ## Service Entry — `run_service.py`
 
@@ -382,5 +401,5 @@ if __name__ == "__main__":
 - **`apply_queue` UNIQUE conflicts**: when credit application is in scope, use `INSERT ... ON CONFLICT(account_id,project_id) DO UPDATE SET ...` for idempotent enqueue.
 - **Active worker counter leak**: wrap the worker call in `try/finally self._active -= 1`. A leak here causes the scheduler to think it's at capacity forever.
 - **Polling every 1s**: don't. 5s is fine for the UI; the scheduler tick can be 2-3s.
-- **`force_relogin` should NOT wipe `course_results`**: only `reset` does that. Two different operations.
+- **Requeue vs delete**: requeue preserves cookies for session reuse; delete wipes everything. Do not reintroduce separate `force_relogin` / `reset` UI actions.
 - **Pause semantics confusion**: pause = stop starting NEW learning. Running workers finish their course, apply worker keeps running.
