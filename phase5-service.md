@@ -4,7 +4,7 @@ Goal: turn the single-account runner into a long-running scheduler that drives m
 
 ## Definition of Done
 
-- [ ] `<svc>/persistence/store.py` with SQLite (WAL) schema for `accounts / runs / kv`, plus optional tables from `docs/API_REQUIREMENTS.md` such as `apply_queue / credit_applications`
+- [ ] `<svc>/persistence/store.py` with SQLite (WAL) schema for `accounts / runs / kv`, plus `ai_subject_cache` when LLM subject mapping is enabled, plus optional tables from `docs/API_REQUIREMENTS.md` such as `apply_queue / credit_applications`
 - [ ] `<svc>/worker.py` `AccountWorker.run_once(account)` runs the full single-account pipeline
 - [ ] If credit application is in scope per `docs/API_REQUIREMENTS.md`, `<svc>/apply_worker.py` `ApplyWorker.process_one(now)` consumes the apply queue independently; otherwise no apply worker is generated
 - [ ] `<svc>/orchestrator.py` ticks every N seconds, claims queued accounts under a concurrency limit
@@ -88,6 +88,16 @@ CREATE TABLE IF NOT EXISTS kv (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+-- Global AI subject-mapping cache (all accounts share; NOT in accounts.extra_json)
+CREATE TABLE IF NOT EXISTS ai_subject_cache (
+    cache_key TEXT PRIMARY KEY,
+    requirement_texts_json TEXT NOT NULL,
+    catalog_snapshot_json TEXT NOT NULL,
+    mapping_json TEXT NOT NULL,
+    created_at REAL NOT NULL DEFAULT 0,
+    updated_at REAL NOT NULL DEFAULT 0
+);
 ```
 
 State machine recap:
@@ -148,7 +158,7 @@ run_once(account):
        a. Build Requirement list from account.requirements when the confirmed scope needs requirements
        b. Fetch platform catalog + merge existing progress (applied / learned-not-applied / in-progress)
        c. Label each candidate progress_tier + subject_tier when subject requirements are enabled (see "Course selection priority" below)
-       d. Optional: AI subject mapping only when needed (rule match first); persist matched_requirement_key when set
+       d. Optional: AI subject mapping only when needed (rule match first); lookup/store in global `ai_subject_cache` keyed by (normalized requirement subject texts + platform catalog snapshot) — shared across all accounts; persist per-course `matched_requirement_key` only in account extra, never the cache blob
        e. Sort by (progress_tier, subject_tier, project_id), then DP/greedy to hit credit target when credit/requirement targets exist
        f. Assign queue_rank 0..n in that sorted order; preserve platform state (applied/learned/running), do not wipe
        g. Write course_results to extra, status -> queued, return (next tick will learn)
@@ -198,6 +208,18 @@ Same tier → sort by `project_id` (or platform course id) lexicographically.
 After sorting all units in the plan by `(progress_tier, subject_tier, project_id)`, assign `queue_rank = 0, 1, 2, …`. DP/greedy walks candidates in that order so applied and learned units stay in the plan and are preferred when filling the schedule.
 
 Implement in `<svc>/course_planner.py` (sort + knapsack) and `<svc>/account_pipeline.py` (platform merge). Each result row should store `progress_tier`, `subject_tier`, and optional `matched_requirement_key` for the Web UI.
+
+### AI subject cache (`subject_mapper.py`)
+
+When LLM mapping is enabled (`templates/requirements.md` §11):
+
+1. **Rule match first** — static/synonym/config maps; no LLM, no cache write.
+2. **Global cache lookup** — canonicalize non-empty requirement subject strings (sorted) + platform subject list (sorted by id, id+label JSON); `cache_key = sha256(canonical_req + "|" + canonical_catalog)`.
+3. **On hit** — apply `mapping_json` (keyed by requirement **text**, not slot name like 学科1).
+4. **On miss** — one LLM call for the whole batch, insert into `ai_subject_cache`, then apply.
+5. **Never** store mapping cache in `accounts.extra_json`; requeue/delete account must not touch `ai_subject_cache`.
+
+Optional: `DELETE FROM ai_subject_cache WHERE cache_key=?` or truncate via maintenance API if operators need to invalidate stale mappings after a platform catalog change.
 
 ## ApplyWorker (only when credit application is in scope)
 
@@ -292,7 +314,7 @@ Web UI exposes **exactly three** account actions. Implement backend helpers `req
 
 | UI label | API | Semantics |
 |----------|-----|-----------|
-| 重入队 | `POST /api/accounts/{id}/requeue` | **Keep** `extra.cookies`, `extra.user_profile`, credentials, config-style `extra` fields. **Clear** all post-login runtime data: `<DOMAIN>_results`, `phase`, `failed_phase`, `runs`, `apply_queue`, quota ledgers, error logs; set `status=queued`, reset `retry_count`, refresh `queued_at`. Next tick: `ensure_session` → on probe success skip login and run full post-login pipeline (assign → gates → learn → apply). If account is `running`, abort worker first. |
+| 重入队 | `POST /api/accounts/{id}/requeue` | **Keep** `extra.cookies`, `extra.user_profile`, credentials, config-style `extra` fields; **keep** global `ai_subject_cache` (not account-scoped). **Clear** all post-login runtime data: `<DOMAIN>_results`, `phase`, `failed_phase`, `runs`, `apply_queue`, quota ledgers, error logs; set `status=queued`, reset `retry_count`, refresh `queued_at`. Next tick: `ensure_session` → on probe success skip login and run full post-login pipeline (assign → gates → learn → apply). If account is `running`, abort worker first. |
 | 编辑后重入队 | `PATCH /api/accounts/{id}` with `"requeue": true` | Merge editable fields (empty password = no change), then same as requeue. |
 | 删除 | `DELETE /api/accounts/{id}` | Delete account row and **all** related rows (including cookies, course state, runs, apply_queue). |
 

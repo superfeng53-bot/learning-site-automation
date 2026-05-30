@@ -215,7 +215,7 @@ Worker / ApplyWorker / phase-4 Runner 内所有 HTTP 业务层须统一走该路
 2. 调用 `<ASSIGNMENT_PIPELINE>`：
    - 拉平台资源列表，**合并**账号在平台上的已有进度（已申请 / 学完未申请 / 正在学）
    - 为每条候选标注 `progress_tier`、`subject_tier`（规则见 §3.2.1）
-   - 可选 LLM 分类（`<LLM_MODEL>`，`temperature=0`）；规则匹配优先
+   - 可选 LLM 分类（`<LLM_MODEL>`，`temperature=0`）；规则匹配优先；LLM 结果写入**全局**学科映射缓存（见 §11），**不得**写入 `extra`
    - 按 §3.2.1 排序后做候选生成 + 凑量（DP / 贪心）；**高优先级档先入选课表**
 3. 写入 `extra["<DOMAIN>_results"]`：保留平台已有 `state`（`applied` / `learned` / `running` 不强行清空），新入选单元 `state=""`，并写入 `queue_rank`
 4. 分配完成 → `queued`
@@ -295,13 +295,56 @@ Worker / ApplyWorker / phase-4 Runner 内所有 HTTP 业务层须统一走该路
 
 ## 10. 持久化表结构
 
-见 phase5-service.md 中「Schema」节。
+见 `phase5-service.md` 中「Schema」节。除 `accounts / runs / kv` 外，启用 AI 学科映射时须包含全局表 `ai_subject_cache`（**非** `accounts.extra_json` 字段）。
 
 ---
 
 ## 11. AI 分类（可选）
 
-仅当需求 → 平台分类需要语义映射时启用。配置：`<LLM_MODEL>`、`temperature=0`、账号级缓存（`extra["ai_<TASK>_map"]`）。规则匹配的快速路径要优先于 LLM。
+仅当需求 → 平台分类需要语义映射时启用。
+
+### 11.1 配置
+
+| 项 | 值 |
+|----|-----|
+| 模型 | `<LLM_MODEL>` |
+| 温度 | `0`（确定性输出） |
+| 凭证 | `.run/ai_config.json`（服务级，非账号级） |
+
+### 11.2 全局映射缓存（必须）
+
+AI 学科匹配缓存为**服务级全局复用**，所有账号共享；**禁止**写入 `accounts.extra_json`（如 ~~`extra["ai_<TASK>_map"]`~~）。
+
+**复用条件**：当次分配所用「需求学科文本集合」与「平台学科/分类列表快照」与某条缓存记录完全一致时，直接复用该记录的映射结果，**不区分账号**。
+
+| 缓存输入 | 规范化规则 |
+|----------|------------|
+| 需求学科文本 | 从 `requirements_json` 取所有非空学科字段值（如学科1、学科2），去首尾空白；按 Unicode 字典序排序后 JSON 序列化 |
+| 平台学科列表 | 当次从平台拉取的学科/分类列表；按平台 ID 字典序排序；每条保留 `id` + `label`（及分类任务需要的其它稳定字段）；JSON 序列化 |
+
+**缓存键**：`cache_key = sha256(需求学科文本规范化 JSON + "|" + 平台学科列表规范化 JSON)`（hex）。
+
+**缓存值**：`mapping_json`，形如 `{ "<需求学科文本>": { "id": "...", "label": "..." }, ... }` —— 按**学科文本**索引，不按「学科1/学科2」槽位索引；应用到账号时再按各槽位的文本查表。
+
+**持久化**：SQLite 表 `ai_subject_cache`（见 `phase5-service.md` Schema）；服务重启后仍有效。
+
+**查找顺序**（`<svc>/subject_mapper.py` 或等价模块）：
+
+1. 规则匹配（字符串包含、同义词表、`config.py` 静态映射）→ 命中则写入单元 `matched_requirement_key`，**不调 LLM、不写缓存**
+2. 用上述规范化输入计算 `cache_key` → 表内命中则应用 `mapping_json`
+3. 未命中 → 调用 LLM → 写入 `ai_subject_cache` → 再应用
+
+同一 `(需求学科文本, 平台列表)` 组合在全服务生命周期内只应触发 **一次** LLM 调用（除非运营手动清缓存）。
+
+### 11.3 与账号生命周期的关系
+
+| 操作 | 对全局 AI 缓存 |
+|------|----------------|
+| 重入队 / 编辑后重入队 | **保留**（只清账号运行态，不清全局缓存） |
+| 删除账号 | **保留** |
+| 手动清缓存（可选 API/运维） | 按 `cache_key` 或整表清除 |
+
+账号侧仅持久化业务结果字段 `matched_requirement_key`（如 `学科1`），不持久化 LLM 原始响应或映射缓存副本。
 
 ---
 
