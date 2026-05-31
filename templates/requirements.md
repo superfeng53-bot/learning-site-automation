@@ -288,7 +288,7 @@ Worker / ApplyWorker / phase-4 Runner 内所有 HTTP 业务层须统一走该路
 |----|---|
 | 默认同时运行账号数 | **400**（服务启动时的 `concurrency_limit` 默认值） |
 | 并发上限 | 手动设置，范围 `[1, 400]` |
-| Tick 错峰间隔 | <STAGGER_SEC>s（调度器每 tick 最多新拉起 1 个 worker，防登录惊群） |
+| Tick 错峰速率 | 滚动 **1 秒**内最多 **<TICK_STARTS_PER_SECOND>** 个（默认 **10**，即约每秒 10 个 worker） |
 | 日切错峰 | `<DAILY_SPREAD_SECONDS>`s（见 §5.3 / §7；与 Tick 错峰**叠加**） |
 | Tick 周期 | <TICK_SEC>s |
 | 申请侧 | 独立通道，不占学习并发 |
@@ -399,5 +399,5 @@ AI 学科匹配缓存为**服务级全局复用**，所有账号共享；**禁�
 
 ---
 
-*用前填空：`<PLATFORM> / <SITE_URL> / <DOMAIN> / 8 / 1800 / <MAX_LEARN_PER_DAY> / <MAX_APPLY_PER_DAY> / 400 / <STAGGER_SEC> / <TICK_SEC> / <APPLY_RATE_BACKOFF_SEC> / <MAX_APPLY_ATTEMPTS> / <LLM_MODEL> / <ASSIGNMENT_PIPELINE> / <APPLY_API_CALL> / <LIGHT_BUSINESS_GET> / <EXTRA_FIELDS>`*  
-（`1800` = `<DAILY_SPREAD_SECONDS>`，日切错峰秒数）
+*用前填空：`<PLATFORM> / <SITE_URL> / <DOMAIN> / 8 / 1800 / <MAX_LEARN_PER_DAY> / <MAX_APPLY_PER_DAY> / 400 / 10 / <TICK_SEC> / <APPLY_RATE_BACKOFF_SEC> / <MAX_APPLY_ATTEMPTS> / <LLM_MODEL> / <ASSIGNMENT_PIPELINE> / <APPLY_API_CALL> / <LIGHT_BUSINESS_GET> / <EXTRA_FIELDS>`*  
+（`1800` = `<DAILY_SPREAD_SECONDS>`；`10` = `<TICK_STARTS_PER_SECOND>`，tick 错峰每秒启动上限）

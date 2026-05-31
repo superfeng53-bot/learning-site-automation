@@ -127,6 +127,9 @@ When credit application is in scope, `waiting_apply` does NOT count against the 
 ## Orchestrator Tick
 
 ```python
+# config.py
+TICK_STARTS_PER_SECOND = 10  # tick 错峰：滚动 1 秒内最多新拉起 10 个 worker
+
 def tick(self):
     now = time.time()
     # 1) optional apply side runs always, even when paused (drains backlog)
@@ -135,16 +138,21 @@ def tick(self):
     # 2) learning side: paused short-circuits
     if self.store.is_paused(): return
     limit = self.store.get_concurrency_limit()
-    if self._active >= limit: return
-    if now - self._last_start < self._stagger_seconds: return  # 2s stagger
-    account = self.store.claim_next_queued(now)
-    if not account: return
-    self._last_start = now
-    self._active += 1
-    threading.Thread(target=self._run_account, args=(account,), daemon=True).start()
+    self._prune_start_timestamps(now, window=1.0)  # drop starts older than 1s
+    budget = min(
+        TICK_STARTS_PER_SECOND - len(self._start_timestamps),
+        max(0, limit - self._active),
+    )
+    for _ in range(budget):
+        account = self.store.claim_next_queued(now)
+        if not account:
+            break
+        self._start_timestamps.append(now)
+        self._active += 1
+        threading.Thread(target=self._run_account, args=(account,), daemon=True).start()
 ```
 
-Stagger (e.g. 2s) avoids login thundering-herd **between orchestrator tick launches**; concurrency limit controls simultaneous workers. This is **orthogonal** to the 8:00 daily-window spread below — both should be enabled.
+**Tick stagger:** rolling **1 second** window, at most **`TICK_STARTS_PER_SECOND` (default 10)** new worker threads — i.e. up to **10 accounts per second**, not one every 2s. Still bounded by `concurrency_limit`. Orthogonal to the 8:00 daily-window spread below; enable both.
 
 ## Daily window spread (8:00 per-account stagger)
 
