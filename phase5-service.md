@@ -7,6 +7,7 @@ Goal: turn the single-account runner into a long-running scheduler that drives m
 - [ ] `<svc>/persistence/store.py` with SQLite (WAL) schema for `accounts / runs / kv`, plus `ai_subject_cache` when LLM subject mapping is enabled, plus optional tables from `docs/API_REQUIREMENTS.md` such as `apply_queue / credit_applications`
 - [ ] `<svc>/worker.py` `AccountWorker.run_once(account)` runs the full single-account pipeline
 - [ ] If credit application is in scope per `docs/API_REQUIREMENTS.md`, `<svc>/apply_worker.py` `ApplyWorker.process_one(now)` consumes the apply queue independently; otherwise no apply worker is generated
+- [ ] `<svc>/scheduling.py` implements stable per-account **8:00 daily-window spread** (`daily_eligible_at`); all day-bound deferrals use it (learning + apply)
 - [ ] `<svc>/orchestrator.py` ticks every N seconds, claims queued accounts under a concurrency limit
 - [ ] `<svc>/web/app.py` FastAPI serves the console + `/api/*` endpoints matching `web-ui-spec.md` §8 and `excel-spec.md`
 - [ ] `<svc>/web/templates/index.html` generated strictly per `web-ui-spec.md` (简体中文, 复制日志, single file, ≤ 1600 LOC)
@@ -143,7 +144,57 @@ def tick(self):
     threading.Thread(target=self._run_account, args=(account,), daemon=True).start()
 ```
 
-Stagger (e.g. 2s) avoids login thundering-herd; concurrency limit (typically 1-5) controls memory + per-IP rate.
+Stagger (e.g. 2s) avoids login thundering-herd **between orchestrator tick launches**; concurrency limit controls simultaneous workers. This is **orthogonal** to the 8:00 daily-window spread below — both should be enabled.
+
+## Daily window spread (8:00 per-account stagger)
+
+Many accounts defer to the same calendar **08:00** (Asia/Shanghai). Without spread, `queued_at` / `next_attempt_at` align to one second and the orchestrator can still launch hundreds of workers once the clock passes 8:00 (especially when `concurrency_limit` is high).
+
+**Rule:** every “today/tomorrow at 8:00” deferral MUST use `daily_eligible_at(account_id, local_day=…)` from `<svc>/scheduling.py`, **not** bare `08:00:00`.
+
+```python
+# <svc>/scheduling.py  (constants from config.py)
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
+
+_TZ = ZoneInfo("Asia/Shanghai")
+
+def spread_offset_seconds(account_id: int) -> int:
+    """Stable offset in [0, DAILY_SPREAD_SECONDS). Same account_id => same offset every day."""
+    return int(account_id) % DAILY_SPREAD_SECONDS
+
+def daily_eligible_at(account_id: int, *, local_day: date) -> float:
+    """Unix ts: local_day at DAILY_START_HOUR:00 Shanghai + spread_offset_seconds(account_id)."""
+    base = datetime(
+        local_day.year, local_day.month, local_day.day,
+        DAILY_START_HOUR, 0, 0, tzinfo=_TZ,
+    )
+    return (base + timedelta(seconds=spread_offset_seconds(account_id))).timestamp()
+
+def today_shanghai() -> date:
+    return datetime.now(tz=_TZ).date()
+
+def tomorrow_shanghai() -> date:
+    return today_shanghai() + timedelta(days=1)
+```
+
+| Constant | Default | Why |
+|----------|---------|-----|
+| `DAILY_SPREAD_SECONDS` | `1800` (30 min) | spreads N accounts across 8:00–8:30; raise to `3600` if fleet > ~2k |
+| `DAILY_START_HOUR` | `8` | nominal daily window |
+
+**Properties:**
+
+- **Stable:** use `account_id % DAILY_SPREAD_SECONDS` (or `zlib.crc32(str(account_id).encode()) % …`); never `random()` per deferral.
+- **Claim order:** `claim_next_queued` already orders by `queued_at ASC` — accounts naturally wake in spread order after 8:00.
+- **Bypass (operator intent):** `POST …/requeue`, `PATCH` with `"requeue": true`, and `POST …/top` may set `queued_at = now` (or `0`) to run immediately; do not re-apply spread on those paths.
+
+**Replace every bare “08:00” timestamp** in worker + apply worker with:
+
+| Old pattern | New |
+|-------------|-----|
+| today 08:00 | `daily_eligible_at(account.id, local_day=today_shanghai())` |
+| tomorrow 08:00 | `daily_eligible_at(account.id, local_day=tomorrow_shanghai())` |
 
 ## Worker Pipeline (per account, single call to `run_once`)
 
@@ -162,14 +213,18 @@ run_once(account):
        e. Sort by (progress_tier, subject_tier, project_id), then DP/greedy to hit credit target when credit/requirement targets exist
        f. Assign queue_rank 0..n in that sorted order; preserve platform state (applied/learned/running), do not wipe
        g. Write course_results to extra, status -> queued, return (next tick will learn)
-    3. Daily gate: before 08:00 Asia/Shanghai -> push queued_at to today 08:00, return
+    3. Daily gate: if now < daily_eligible_at(account.id, local_day=today_shanghai())
+       -> push queued_at to that timestamp, return
     4. Learning gate:
        - if credit application is in scope: any course state == "learned" -> waiting_apply (apply worker handles it), return
-       - any course daily_learn_date == today -> already learned 1 today, push to tomorrow 08:00
+       - any course daily_learn_date == today -> already learned 1 today
+         -> push queued_at to daily_eligible_at(account.id, local_day=tomorrow_shanghai())
        - among courses with state in ("", "running"), pick smallest queue_rank (skip applied/failed/skipped)
     5. Run phase-4 runner on the chosen course
     6. Persist results:
-       - success + credit in scope -> course.state = learned, push apply_queue with next_attempt_at = tomorrow 08:00, status -> waiting_apply
+       - success + credit in scope -> course.state = learned,
+         push apply_queue with next_attempt_at = daily_eligible_at(account.id, local_day=tomorrow_shanghai()),
+         status -> waiting_apply
        - success + no credit in scope -> course.state = learned/completed per site, continue or complete account
        - retryable failure -> status retrying, retry_count++, queued_at = now+60
        - hard failure -> status failed, failed_phase = learning
@@ -226,7 +281,8 @@ Optional: `DELETE FROM ai_subject_cache WHERE cache_key=?` or truncate via maint
 ```
 process_one(now):
     1. claim next pending apply task with next_attempt_at <= now
-    2. If credit_applications today success count >= daily_apply_limit: push the whole account's pending tasks to tomorrow 08:00, return
+    2. If credit_applications today success count >= daily_apply_limit:
+       push pending tasks' next_attempt_at to daily_eligible_at(account.id, local_day=tomorrow_shanghai()), return
     3. ensure_session from account.extra.cookies (fallback to full login)
     4. credit.apply_credit(project_id, auto_survey=True)
     5. On success: status = succeeded, course.state = applied, write credit_applications, check if account fully completed
@@ -250,9 +306,10 @@ UPDATE apply_queue SET status='pending' WHERE status='in_flight';
 | Constant | Value | Why |
 |----------|-------|-----|
 | `DAILY_START_HOUR` | `8` (Asia/Shanghai) | sites usually open daily window at 8am |
+| `DAILY_SPREAD_SECONDS` | `1800` | per-account stable offset after 8:00; avoids 8:00 login/apply burst |
 | `MAX_LEARN_PER_DAY` | `1` per account | matches most CME / 继教 rules |
 | `MAX_APPLY_PER_DAY` | `1` per account | same |
-| `APPLY_AFTER_HOURS` | next-day 08:00 | many sites refuse same-day apply |
+| `APPLY_AFTER_HOURS` | next-day `daily_eligible_at(...)` | many sites refuse same-day apply; use spread, not bare 08:00 |
 
 Change per site as needed but keep them as constants in `<svc>/config.py`. Do not expose to UI unless the user asks for it.
 
@@ -425,3 +482,5 @@ if __name__ == "__main__":
 - **Polling every 1s**: don't. 5s is fine for the UI; the scheduler tick can be 2-3s.
 - **Requeue vs delete**: requeue preserves cookies for session reuse; delete wipes everything. Do not reintroduce separate `force_relogin` / `reset` UI actions.
 - **Pause semantics confusion**: pause = stop starting NEW learning. Running workers finish their course, apply worker keeps running.
+- **Bare 08:00 timestamps**: writing the same unix time for every account at day boundary recreates a thundering herd at 8:00 even with tick stagger — always `daily_eligible_at(account_id, local_day)`.
+- **Unstable spread**: `random()` per deferral shifts an account's slot daily and confuses operators; use `account_id`-derived offset only.

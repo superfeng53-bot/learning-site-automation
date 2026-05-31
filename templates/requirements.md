@@ -222,13 +222,19 @@ Worker / ApplyWorker / phase-4 Runner 内所有 HTTP 业务层须统一走该路
 
 ### 5.3 日切闸门
 
-- 早于 **8:00**（Asia/Shanghai）→ 推迟 `queued_at` 到今日 8:00
+日窗口**名义起点**为 **8:00**（Asia/Shanghai），但每个账号有**稳定错峰偏移**，避免数千账号在同一秒入队。
+
+- 实现：`<svc>/scheduling.py` 的 `daily_eligible_at(account_id, local_day)`  
+  `= 当日 8:00 + (account_id % <DAILY_SPREAD_SECONDS>)` 秒（默认 `<DAILY_SPREAD_SECONDS>=1800`，即 8:00–8:30 铺开）
+- 若 `now < daily_eligible_at(account_id, 今日)` → 推迟 `queued_at` 到该时间戳后返回
+- **禁止**把所有账号写成同一个「今日/明日 08:00:00」Unix 时间；**禁止**用 `random()` 做偏移（须按 `account_id` 稳定）
+- 运营 **重入队 / 置顶** 可将 `queued_at` 设为 `now`（或 `0`），故意绕过错峰
 
 ### 5.4 学习前闸门
 
 按顺序：
 1. 若站点存在申请学分流程且有 `state == "learned"` 的单元 → `waiting_apply`（申请侧处理，本步不开新学）
-2. 今日已学完 <MAX_LEARN_PER_DAY> 门 → 推迟到明日 8:00
+2. 今日已学完 <MAX_LEARN_PER_DAY> 门 → 推迟 `queued_at` 到 `daily_eligible_at(account_id, 明日)`
 3. 在 `state` 为 `""` 或 `running` 的单元中，选 **`queue_rank` 最小** 的一门（排序已在分配时按 §3.2.1 固化；等价于优先续学「正在学」，再按学科档选未开始）
 4. 跳过 `state` 为 `applied` / `failed` / `skipped` 的单元（已申请仅保留在课表中展示与完成度统计）
 
@@ -240,7 +246,7 @@ Worker / ApplyWorker / phase-4 Runner 内所有 HTTP 业务层须统一走该路
 
 | 结果 | 调度器动作 |
 |------|-----------|
-| 成功且站点存在申请学分流程时 | `state=learned`，写 `apply_queue`（`next_attempt_at=次日 8:00`），账号 `waiting_apply` |
+| 成功且站点存在申请学分流程时 | `state=learned`，写 `apply_queue`（`next_attempt_at=daily_eligible_at(account_id, 明日)`），账号 `waiting_apply` |
 | 成功且站点无申请学分流程时 | `state=learned` 或站点等价完成态，继续下一门或账号 `completed` |
 | 可重试失败 | `retrying`，`retry_count+1`，60s 后重试；达上限 → `failed` |
 | 不可重试 | `failed` |
@@ -252,7 +258,7 @@ Worker / ApplyWorker / phase-4 Runner 内所有 HTTP 业务层须统一走该路
 
 每次 tick 调用 `ApplyWorker.process_one()`：
 
-1. 今日成功数 ≥ <MAX_APPLY_PER_DAY> → 整账号推迟到明日 8:00
+1. 今日成功数 ≥ <MAX_APPLY_PER_DAY> → 待处理任务的 `next_attempt_at` 推迟到 `daily_eligible_at(account_id, 明日)`
 2. 复用 `cookies` 加载会话
 3. `<APPLY_API_CALL>`
 4. 成功 → `apply_queue.status=succeeded`，写流水，单元 `state=applied`
@@ -267,9 +273,10 @@ Worker / ApplyWorker / phase-4 Runner 内所有 HTTP 业务层须统一走该路
 
 | 规则 | 值 |
 |------|---|
-| 日窗口起点 | 8:00 Asia/Shanghai |
+| 日窗口起点 | 8:00 Asia/Shanghai（名义） |
+| 日窗口错峰 | `<DAILY_SPREAD_SECONDS>` 秒（默认 **1800**）；每账号 `8:00 + account_id %  spread` |
 | 每日学习上限 | <MAX_LEARN_PER_DAY> 门/账号 |
-| 学完当日不申请 | 申请 `next_attempt_at = 次日 8:00` |
+| 学完当日不申请 | 申请 `next_attempt_at = daily_eligible_at(account_id, 明日)` |
 | 每日申请成功上限 | <MAX_APPLY_PER_DAY> 门/账号 |
 | 申请优先于新学 | 有 `learned` 时不开新学 |
 
@@ -281,7 +288,8 @@ Worker / ApplyWorker / phase-4 Runner 内所有 HTTP 业务层须统一走该路
 |----|---|
 | 默认同时运行账号数 | **400**（服务启动时的 `concurrency_limit` 默认值） |
 | 并发上限 | 手动设置，范围 `[1, 400]` |
-| 错峰间隔 | <STAGGER_SEC>s（每个 tick 最多启动 1 个） |
+| Tick 错峰间隔 | <STAGGER_SEC>s（调度器每 tick 最多新拉起 1 个 worker，防登录惊群） |
+| 日切错峰 | `<DAILY_SPREAD_SECONDS>`s（见 §5.3 / §7；与 Tick 错峰**叠加**） |
 | Tick 周期 | <TICK_SEC>s |
 | 申请侧 | 独立通道，不占学习并发 |
 
@@ -379,7 +387,7 @@ AI 学科匹配缓存为**服务级全局复用**，所有账号共享；**禁�
 - [ ] 站点存在申请学分流程时，学习队列与申请队列分通道，`waiting_apply` 不占学习并发
 - [ ] 单账号管线：Token 复用 → 分配 → 日闸门 → 学习 → 结果归并
 - [ ] 课程 `progress_tier` / `subject_tier` / `queue_rank` 与 §3.2.1 选课优先级一致
-- [ ] 日切 8:00 固定，每日 <MAX_LEARN_PER_DAY> 学；站点存在申请学分流程时每日 <MAX_APPLY_PER_DAY> 申
+- [ ] 日切名义 8:00 + 每账号稳定错峰（`daily_eligible_at`）；每日 <MAX_LEARN_PER_DAY> 学；站点存在申请学分流程时每日 <MAX_APPLY_PER_DAY> 申
 - [ ] 站点存在申请学分流程时申请优先：有 `learned` 时不开新学
 - [ ] 并发可调、可暂停、活跃计数准确（finally 释放）
 - [ ] 崩溃恢复不打死账号
@@ -391,4 +399,5 @@ AI 学科匹配缓存为**服务级全局复用**，所有账号共享；**禁�
 
 ---
 
-*用前填空：`<PLATFORM> / <SITE_URL> / <DOMAIN> / 8 / <MAX_LEARN_PER_DAY> / <MAX_APPLY_PER_DAY> / 400 / <STAGGER_SEC> / <TICK_SEC> / <APPLY_RATE_BACKOFF_SEC> / <MAX_APPLY_ATTEMPTS> / <LLM_MODEL> / <ASSIGNMENT_PIPELINE> / <APPLY_API_CALL> / <LIGHT_BUSINESS_GET> / <EXTRA_FIELDS>`*
+*用前填空：`<PLATFORM> / <SITE_URL> / <DOMAIN> / 8 / 1800 / <MAX_LEARN_PER_DAY> / <MAX_APPLY_PER_DAY> / 400 / <STAGGER_SEC> / <TICK_SEC> / <APPLY_RATE_BACKOFF_SEC> / <MAX_APPLY_ATTEMPTS> / <LLM_MODEL> / <ASSIGNMENT_PIPELINE> / <APPLY_API_CALL> / <LIGHT_BUSINESS_GET> / <EXTRA_FIELDS>`*  
+（`1800` = `<DAILY_SPREAD_SECONDS>`，日切错峰秒数）
