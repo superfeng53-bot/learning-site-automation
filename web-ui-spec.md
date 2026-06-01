@@ -439,8 +439,8 @@ tbody td {
 
 | 按钮 | 样式 | 行为 |
 |---|---|---|
-| 重入队 | `.btn-ghost .btn-sm` | `POST /api/accounts/{id}/requeue`；语义见 §10.1 |
-| 编辑后重入队 | `.btn-outline .btn-sm` | 打开编辑模态（字段同 §6.5 添加表单）；确认后 `PATCH /api/accounts/{id}` 且 body 含 `"requeue": true` |
+| 重学 | `.btn-ghost .btn-sm` | `POST /api/accounts/{id}/requeue`；语义见 §10.1 |
+| 编辑重学 | `.btn-outline .btn-sm` | 打开编辑模态（字段同 §6.5 添加表单）；确认后 `PATCH /api/accounts/{id}` 且 body 含 `"requeue": true` |
 | 删除 | `.btn-icon .btn-ghost` 垃圾桶 SVG，hover 时 color `var(--c-danger)` | `DELETE /api/accounts/{id}`；删除该账号全部数据 |
 
 **禁止**在操作列放置「详情」「复制日志」「强制重登」「重置课程」等第四按钮；上述能力通过其他入口提供（见 §6.13、§6.17）。
@@ -466,7 +466,7 @@ tbody td {
 2. 账号（mono 12px muted）
 3. 学科·学分标签行
 4. 说明（如有，muted 12px 两行省略）
-5. 操作行（flex gap 8px flex-wrap）：重入队 / 编辑后重入队 / 删除（与桌面表格 §6.7 三按钮一致）
+5. 操作行（flex gap 8px flex-wrap）：重学 / 编辑重学 / 删除（与桌面表格 §6.7 三按钮一致）
 
 ### 6.9 空态 `.empty-state`
 
@@ -566,7 +566,7 @@ API：`await window.ui.confirm({ title, body, okText, okTone:"danger|primary", c
 
 - **头 `.drawer-head`**：`padding 18px 20px`，`border-bottom`；左标题（600 weight）+ 右 × 关闭按钮
 - **体 `.drawer-body`**：`flex 1; overflow-y auto; padding 20px`
-- **尾 `.drawer-foot`**：详情抽屉为**只读**，**不得**放置重入队 / 编辑 / 删除 / 强制重登 / 重置课程等操作按钮（账户操作仅在列表 §6.7 三按钮）。若需底部栏，仅放「关闭」或省略 `.drawer-foot`。
+- **尾 `.drawer-foot`**：详情抽屉为**只读**，**不得**放置重学 / 编辑重学 / 删除 / 强制重登 / 重置课程等操作按钮（账户操作仅在列表 §6.7 三按钮）。若需底部栏，仅放「关闭」或省略 `.drawer-foot`。
 
 **Tabs 在 drawer-body 内**（见 §6.14）
 
@@ -648,8 +648,8 @@ Tabs 根据 `docs/API_REQUIREMENTS.md` 生成：基础为 `基本信息 / 课程
 8. **Excel 上传**：`j.failed > 0` 用 warning toast，否则 success；消息格式 `导入：新增 X，跳过 Y，失败 Z`。
 9. **暂停/恢复**：根据 `data.paused` 切换两个按钮的 `[hidden]`。
 10. **删除**：必须经 `ui.confirm`，`okTone:"danger"`，body 写明将永久删除该账号及全部运行数据（含 cookies、课表、运行记录）。
-11. **重入队 / 编辑后重入队**：须 `ui.confirm`（`okTone:"primary"`），body 说明将清除登录后产生的运行数据但**保留 cookies 等登录指纹**（重入队）或**先保存表单再同等清除**（编辑后重入队）。若账号 `status === 'running'`，confirm 额外提示「将中断当前任务」。
-12. **编辑后重入队模态**：字段与 §6.5 添加表单一致（含密码；空密码表示不修改）；主按钮文案「保存并重入队」；取消不发请求。
+11. **重学 / 编辑重学**：须 `ui.confirm`（`okTone:"primary"`），body 说明将清除登录后产生的运行数据但**保留 cookies 等登录指纹**（重学）或**先保存表单再同等清除**（编辑重学）。若账号 `status === 'running'`，confirm 额外提示「将中断当前任务」。
+12. **编辑重学模态**：字段与 §6.5 添加表单一致（含密码；空密码表示不修改）；主按钮文案「保存并重学」；取消不发请求。
 13. **数字输入**：并发 `min=1 max=50 step=1`；学分 `min=0 step=0.5`。
 14. **空态切换**：初次加载 → skeleton；数据到达 → 渐变 opacity `0→1`（200ms）；无数据 → empty-state。
 
@@ -680,7 +680,7 @@ Tabs 根据 `docs/API_REQUIREMENTS.md` 生成：基础为 `基本信息 / 课程
 | POST | `/api/accounts` | `{ display_name, username, password, requirements?:[{category, credits}], extra?:{...} }`，字段按 `docs/API_REQUIREMENTS.md` 启用 | `{ id }` |
 | POST | `/api/accounts/upload` | multipart `file` | `{ added, skipped, failed, errors? }` |
 | GET | `/api/accounts/{id}` | — | `{ ...account, error_log_text, extra{…}, apply_tasks[], runs[] }` |
-| PATCH | `/api/accounts/{id}` | 部分字段；可选 `"requeue": true`（编辑后重入队，语义同 §10.1） | `{ ok: true }` |
+| PATCH | `/api/accounts/{id}` | 部分字段；可选 `"requeue": true`（编辑重学，语义同 §10.1） | `{ ok: true }` |
 | DELETE | `/api/accounts/{id}` | — | `{ ok: true }`；删除账号行及 runs / apply_queue / 业务流水等全部关联数据 |
 | POST | `/api/accounts/{id}/requeue` | — | `{ ok: true }`；语义见 §10.1 |
 | POST | `/api/scheduler/limit` | `{ limit:int }` | `{ ok: true, limit }` |
@@ -695,7 +695,7 @@ Tabs 根据 `docs/API_REQUIREMENTS.md` 生成：基础为 `基本信息 / 课程
 
 ### 10.1 账户操作语义（后端必须实现，与 UI 三按钮一一对应）
 
-#### 重入队（`POST …/requeue` 或 `PATCH …` + `"requeue": true`）
+#### 重学（`POST …/requeue` 或 `PATCH …` + `"requeue": true`）
 
 **保留**（登录指纹，供下次 `ensure_session` 探活复用）：
 
@@ -715,16 +715,16 @@ Tabs 根据 `docs/API_REQUIREMENTS.md` 生成：基础为 `基本信息 / 课程
 
 若账号当前为 `running`：先标记中断/释放 worker，再执行上述清除并入队。
 
-#### 编辑后重入队（`PATCH …` + `"requeue": true`）
+#### 编辑重学（`PATCH …` + `"requeue": true`）
 
 1. 合并 PATCH body 中的可编辑字段（密码为空则不改密码）。
-2. 执行与「重入队」相同的保留/清除规则并入队。
+2. 执行与「重学」相同的保留/清除规则并入队。
 
 #### 删除（`DELETE …/{id}`）
 
 删除 `accounts` 行及所有关联数据（含 cookies、课表、runs、apply_queue、流水）；不可恢复。
 
-**已废弃的 UI/API 面**：不再提供 `force_relogin`、`reset` 端点或按钮；「清 cookies 强制重登」与「只清课表」由「重入队」（保留 cookies、清运行数据）与「删除」覆盖。
+**已废弃的 UI/API 面**：不再提供 `force_relogin`、`reset` 端点或按钮；「清 cookies 强制重登」与「只清课表」由「重学」（保留 cookies、清运行数据）与「删除」覆盖。
 
 ---
 
@@ -754,7 +754,7 @@ Tabs 根据 `docs/API_REQUIREMENTS.md` 生成：基础为 `基本信息 / 课程
 - [ ] Header Logo 方块用渐变色背景（蓝→紫），不是纯色
 - [ ] Toast 有左侧 3px accent 色条 + 对应 tone 图标
 - [ ] Modal/Drawer 有 backdrop-blur 遮罩，而非纯色遮罩
-- [ ] 详情抽屉为只读，账户操作仅在列表三按钮（重入队 / 编辑后重入队 / 删除）
+- [ ] 详情抽屉为只读，账户操作仅在列表三按钮（重学 / 编辑重学 / 删除）
 - [ ] 移动端（375px 宽）表格切换为卡片视图，无横向滚动
 - [ ] 所有按钮有 `:focus-visible` ring，且仅在键盘导航时显示
 - [ ] 运行历史条目可展开查看原始日志，使用 `<details>` 原生折叠
@@ -768,7 +768,7 @@ Tabs 根据 `docs/API_REQUIREMENTS.md` 生成：基础为 `基本信息 / 课程
 - [ ] 切到 iPhone SE（375×667），表格变卡片，无横向滚动
 - [ ] 切暗色主题，对比度无问题（标题、说明、徽章都清楚可读）
 - [ ] 按 `/` `N` `Space` `T` `Esc` `?` 都生效
-- [ ] 删除 / 重入队 / 编辑后重入队先弹 confirm，取消后不发请求（DevTools Network 验证）
+- [ ] 删除 / 重学 / 编辑重学先弹 confirm，取消后不发请求（DevTools Network 验证）
 - [ ] 操作列始终仅三按钮；复制日志仅在详情抽屉内
 - [ ] 假装 `/api/accounts` 返回 500：toast 报红，不卡死，下次轮询继续
 - [ ] 标签页切到后台 ≥ 30s，切回后立即触发刷新且 `#lastSync` 更新

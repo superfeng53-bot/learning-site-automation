@@ -356,9 +356,9 @@ POST   /api/accounts                           create one
 POST   /api/accounts/batch                     create many
 POST   /api/accounts/upload                    Excel
 GET    /api/accounts/{id}                      detail + runs + optional apply_tasks / credit_applications
-PATCH  /api/accounts/{id}                      partial update; `"requeue": true` = 编辑后重入队
+PATCH  /api/accounts/{id}                      partial update; `"requeue": true` = 编辑重学
 DELETE /api/accounts/{id}
-POST   /api/accounts/{id}/requeue              重入队（语义见 Account operations）
+POST   /api/accounts/{id}/requeue              重学（语义见 Account operations）
 POST   /api/accounts/{id}/top
 POST   /api/accounts/{id}/recharge             optional, only if site has confirmed recharge/card flow
 POST   /api/scheduler/limit                    {limit: int}
@@ -379,8 +379,8 @@ Web UI exposes **exactly three** account actions. Implement backend helpers `req
 
 | UI label | API | Semantics |
 |----------|-----|-----------|
-| 重入队 | `POST /api/accounts/{id}/requeue` | **Keep** `extra.cookies`, `extra.user_profile`, credentials, config-style `extra` fields; **keep** global `ai_subject_cache` (not account-scoped). **Clear** all post-login runtime data: `<DOMAIN>_results`, `phase`, `failed_phase`, `runs`, `apply_queue`, quota ledgers, error logs; set `status=queued`, reset `retry_count`, refresh `queued_at`. Next tick: `ensure_session` → on probe success skip login and run full post-login pipeline (assign → gates → learn → apply). If account is `running`, abort worker first. |
-| 编辑后重入队 | `PATCH /api/accounts/{id}` with `"requeue": true` | Merge editable fields (empty password = no change), then same as requeue. |
+| 重学 | `POST /api/accounts/{id}/requeue` | **Keep** `extra.cookies`, `extra.user_profile`, credentials, config-style `extra` fields; **keep** global `ai_subject_cache` (not account-scoped). **Clear** all post-login runtime data: `<DOMAIN>_results`, `phase`, `failed_phase`, `runs`, `apply_queue`, quota ledgers, error logs; set `status=queued`, reset `retry_count`, refresh `queued_at`. Next tick: `ensure_session` → on probe success skip login and run full post-login pipeline (assign → gates → learn → apply). If account is `running`, abort worker first. |
+| 编辑重学 | `PATCH /api/accounts/{id}` with `"requeue": true` | Merge editable fields (empty password = no change), then same as requeue. |
 | 删除 | `DELETE /api/accounts/{id}` | Delete account row and **all** related rows (including cookies, course state, runs, apply_queue). |
 
 Do **not** expose `force_relogin` or `reset` endpoints to the UI; requeue + delete supersede them.
