@@ -2,6 +2,10 @@
 
 > Phase 2 开始前由父 agent 根据用户确认结果生成。后续 `API_REFERENCE.md`、`CourseRunner`、常驻服务、Web UI、Excel 导入导出都必须以本文件为范围来源。
 
+## Site profile
+
+- **A — 学科规划型** | **B — 公需年度型**（见 `site-profiles.md`）
+
 ## Mandatory
 
 - Login / session continuity

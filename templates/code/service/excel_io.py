@@ -1,0 +1,331 @@
+"""
+Excel 导入/导出（中文表头，openpyxl）。
+复制到 <svc>/web/excel_io.py，按 site_profile 调整：
+  - A 型：IMPORT_COLS 保持默认（含学科/学分/卡号）
+  - B 型：替换 IMPORT_COLS 为 B_IMPORT_COLS，删除 A 型学科列
+
+依赖：openpyxl（已在项目 requirements.txt 中）
+"""
+from __future__ import annotations
+
+import io
+import json
+import time
+from dataclasses import dataclass
+from typing import Any
+
+import openpyxl
+from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
+from openpyxl.utils import get_column_letter
+
+# ── A 型列定义（含学科/学分/卡号）────────────────────────────────────────────
+
+IMPORT_COLS = [
+    "姓名", "账号", "密码",
+    "学科1", "学分1", "学科2", "学分2",
+    "卡号", "卡号密码", "备注",
+]
+
+# ── B 型列定义（公需年度型）─ 替换上面的 IMPORT_COLS ──────────────────────────
+
+B_IMPORT_COLS = [
+    "账号", "密码", "备注", "目标年度", "任务模式",
+]
+
+# ── 导出追加列（状态/日志等）─────────────────────────────────────────────────
+
+EXPORT_EXTRA_COLS = [
+    "状态", "说明", "重试次数", "创建时间", "更新时间",
+    "最近运行结果", "错误日志",
+]
+
+PLATFORM_NAME = "平台"    # TODO: 替换为实际平台名
+
+
+# ── 样式 ──────────────────────────────────────────────────────────────────────
+
+def _header_style() -> dict:
+    return {
+        "font": Font(name="微软雅黑", bold=True, size=11),
+        "fill": PatternFill("solid", fgColor="3659F0"),
+        "alignment": Alignment(horizontal="center", vertical="center", wrap_text=True),
+        "border": Border(
+            bottom=Side(style="thin", color="FFFFFF"),
+        ),
+    }
+
+
+def _apply_style(cell, **kwargs):
+    for attr, val in kwargs.items():
+        setattr(cell, attr, val)
+
+
+# ── 模板生成 ──────────────────────────────────────────────────────────────────
+
+def build_template_xlsx(import_cols: list[str] | None = None) -> bytes:
+    """生成 {PLATFORM_NAME}账号模板.xlsx，含账号列表 + 填写说明两个 Sheet。"""
+    cols = import_cols or IMPORT_COLS
+    wb = openpyxl.Workbook()
+
+    # Sheet1：账号列表
+    ws1 = wb.active
+    ws1.title = "账号列表"
+    ws1.row_dimensions[1].height = 28
+    style = _header_style()
+    for ci, col_name in enumerate(cols, start=1):
+        cell = ws1.cell(row=1, column=ci, value=col_name)
+        cell.font = Font(name="微软雅黑", bold=True, size=11, color="FFFFFF")
+        cell.fill = style["fill"]
+        cell.alignment = style["alignment"]
+        ws1.column_dimensions[get_column_letter(ci)].width = max(12, len(col_name) * 2 + 4)
+
+    # 示例行
+    sample = _get_sample_row(cols)
+    for ci, val in enumerate(sample, start=1):
+        cell = ws1.cell(row=2, column=ci, value=val)
+        cell.font = Font(name="微软雅黑", size=10, color="888888")
+
+    # Sheet2：填写说明
+    ws2 = wb.create_sheet("填写说明")
+    notes = [
+        ("说明", "内容"),
+        ("必填列", "、".join(c for c in cols if c not in ("备注", "卡号", "卡号密码"))),
+        ("密码", "空密码表示导入时不修改密码"),
+        ("学科", "填写平台显示的学科名称，如"内科学""),
+        ("目标年度", "多个年度用逗号分隔，如 2026,2025"),
+        ("重复账号", "重复账号自动跳过，不会覆盖"),
+        ("导入格式", "仅解析"账号列表" Sheet 的中文表头行，其余 Sheet 忽略"),
+    ]
+    ws2.column_dimensions["A"].width = 16
+    ws2.column_dimensions["B"].width = 50
+    for ri, (k, v) in enumerate(notes, start=1):
+        ws2.cell(row=ri, column=1, value=k).font = Font(name="微软雅黑", bold=True)
+        ws2.cell(row=ri, column=2, value=v).font = Font(name="微软雅黑")
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def _get_sample_row(cols: list[str]) -> list[str]:
+    mapping = {
+        "姓名": "张三",
+        "账号": "zhangsan@example.com",
+        "密码": "（示例密码）",
+        "学科1": "内科学",
+        "学分1": "5",
+        "学科2": "公共课",
+        "学分2": "3",
+        "卡号": "（如有）",
+        "卡号密码": "（如有）",
+        "备注": "备注信息",
+        "目标年度": "2026,2025",
+        "任务模式": "标准",
+    }
+    return [mapping.get(c, "") for c in cols]
+
+
+# ── 导入解析 ──────────────────────────────────────────────────────────────────
+
+@dataclass
+class ImportRow:
+    display_name: str
+    username: str
+    password: str
+    requirements: list[dict]       # A 型：[{"category":..., "credits":...}]
+    target_years: list[str]        # B 型
+    report_mode: str
+    extra: dict[str, Any]
+    remark: str
+
+
+@dataclass
+class ImportResult:
+    rows: list[ImportRow]
+    added: int
+    skipped: int
+    failed: int
+    errors: list[str]
+
+
+def parse_import_xlsx(data: bytes, site_profile: str = "A") -> ImportResult:
+    """
+    解析导入文件。
+    site_profile: "A"（学科规划型）或 "B"（公需年度型）
+    只认中文表头；英文表头报错。
+    """
+    wb = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+    ws = None
+    for sn in wb.sheetnames:
+        if "账号" in sn or sn == wb.sheetnames[0]:
+            ws = wb[sn]
+            break
+    if ws is None:
+        return ImportResult([], 0, 0, 0, ["未找到账号 Sheet"])
+
+    rows_iter = ws.iter_rows(values_only=True)
+    header_row = next(rows_iter, None)
+    if not header_row:
+        return ImportResult([], 0, 0, 0, ["Sheet 为空"])
+
+    header = [str(c).strip() if c else "" for c in header_row]
+
+    # 检测是否有英文列名
+    english_headers = [h for h in header if h and h.isascii() and h.replace(" ", "").isalpha() and len(h) > 1]
+    if len(english_headers) > 3:
+        return ImportResult([], 0, 0, 0,
+                            [f"表头必须为中文，检测到英文列名：{', '.join(english_headers[:5])}"])
+
+    def col(name: str) -> int | None:
+        try:
+            return header.index(name)
+        except ValueError:
+            return None
+
+    rows: list[ImportRow] = []
+    errors: list[str] = []
+
+    for ri, row in enumerate(rows_iter, start=2):
+        def v(name: str, default: str = "") -> str:
+            i = col(name)
+            return str(row[i]).strip() if i is not None and row[i] not in (None, "") else default
+
+        if site_profile == "B":
+            username = v("账号")
+            if not username:
+                continue
+            password = v("密码")
+            remark = v("备注")
+            years_raw = v("目标年度")
+            target_years = [y.strip() for y in years_raw.replace("，", ",").split(",") if y.strip()] if years_raw else []
+            report_mode = v("任务模式", "normal")
+            if report_mode in ("快速", "fast"):
+                report_mode = "fast"
+            else:
+                report_mode = "normal"
+            rows.append(ImportRow(
+                display_name=username,
+                username=username,
+                password=password,
+                requirements=[],
+                target_years=target_years,
+                report_mode=report_mode,
+                extra={"remark": remark},
+                remark=remark,
+            ))
+        else:
+            username = v("账号")
+            if not username:
+                continue
+            display_name = v("姓名", username)
+            password = v("密码")
+            remark = v("备注")
+            card_no = v("卡号")
+            card_pwd = v("卡号密码")
+            reqs = []
+            for i in range(1, 5):
+                cat = v(f"学科{i}")
+                cr_raw = v(f"学分{i}", "0")
+                try:
+                    cr = float(cr_raw) if cr_raw else 0.0
+                except ValueError:
+                    cr = 0.0
+                if cat:
+                    reqs.append({"category": cat, "credits": cr})
+            extra: dict[str, Any] = {}
+            if card_no:
+                extra["card_no"] = card_no
+            if card_pwd:
+                extra["card_password"] = card_pwd
+            if remark:
+                extra["remark"] = remark
+            rows.append(ImportRow(
+                display_name=display_name,
+                username=username,
+                password=password,
+                requirements=reqs,
+                target_years=[],
+                report_mode="normal",
+                extra=extra,
+                remark=remark,
+            ))
+
+    return ImportResult(rows=rows, added=0, skipped=0, failed=len(errors), errors=errors)
+
+
+# ── 导出 ──────────────────────────────────────────────────────────────────────
+
+def build_export_xlsx(accounts: list[dict], site_profile: str = "A",
+                      import_cols: list[str] | None = None) -> bytes:
+    """
+    导出：前 N 列与导入模板完全一致；后追加状态/日志等系统列。
+    accounts: list of dict（来自 API 层，已脱敏，密码字段为空或已移除）
+    """
+    cols = import_cols or (IMPORT_COLS if site_profile == "A" else B_IMPORT_COLS)
+    all_cols = cols + EXPORT_EXTRA_COLS
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "账号列表"
+    ws.row_dimensions[1].height = 28
+
+    header_fill = PatternFill("solid", fgColor="3659F0")
+    header_font = Font(name="微软雅黑", bold=True, size=11, color="FFFFFF")
+    header_align = Alignment(horizontal="center", vertical="center")
+
+    for ci, col_name in enumerate(all_cols, start=1):
+        cell = ws.cell(row=1, column=ci, value=col_name)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_align
+        ws.column_dimensions[get_column_letter(ci)].width = max(14, len(col_name) * 2 + 4)
+
+    status_map = {
+        "queued": "排队", "running": "进行中", "waiting_apply": "等待申请",
+        "retrying": "重试", "completed": "已完成", "failed": "失败", "paused": "已暂停",
+    }
+
+    for ri, acc in enumerate(accounts, start=2):
+        extra = json.loads(acc.get("extra_json") or "{}")
+        reqs = json.loads(acc.get("requirements_json") or "[]")
+        target_years = json.loads(acc.get("target_years_json") or "[]")
+
+        row_data: dict[str, Any] = {
+            "姓名": acc.get("display_name", ""),
+            "账号": acc.get("username", ""),
+            "密码": "",  # 不导出密码
+            "备注": extra.get("remark", ""),
+            "卡号": extra.get("card_no", ""),
+            "卡号密码": "",  # 不导出卡号密码
+            "目标年度": ",".join(target_years),
+            "任务模式": "快速" if extra.get("report_mode") == "fast" else "标准",
+            "状态": status_map.get(acc.get("status", ""), acc.get("status", "")),
+            "说明": acc.get("status_msg", ""),
+            "重试次数": acc.get("retry_count", 0),
+            "创建时间": _fmt_ts(acc.get("created_at")),
+            "更新时间": _fmt_ts(acc.get("updated_at")),
+            "最近运行结果": acc.get("last_run_result", ""),
+            "错误日志": acc.get("error_log_text", ""),
+        }
+
+        # A 型：学科/学分列
+        for i, req in enumerate(reqs[:4], start=1):
+            row_data[f"学科{i}"] = req.get("category", "")
+            row_data[f"学分{i}"] = req.get("credits", "")
+
+        for ci, col_name in enumerate(all_cols, start=1):
+            val = row_data.get(col_name, "")
+            cell = ws.cell(row=ri, column=ci, value=val)
+            cell.font = Font(name="微软雅黑", size=10)
+            cell.alignment = Alignment(vertical="center")
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def _fmt_ts(ts: float | None) -> str:
+    if not ts:
+        return ""
+    import datetime
+    return datetime.datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")

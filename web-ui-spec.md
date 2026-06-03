@@ -1,7 +1,7 @@
 # Web Console UI Spec（固定，不要跑偏）
 
 本规格描述 phase 5 的 Web 控制台必须长什么样、用什么、怎么交互。  
-**执行 agent 必须按本规格自行生成 `<svc>/web/templates/index.html`，本 skill 不再提供 HTML 模板。**  
+**通用模板已预写于 `templates/code/web/index.html`（A 型完整实现）。执行 agent 直接复制该文件，替换 `{{ PLATFORM }}`/`{{ LOGO_LETTER }}`，B 型替换添加面板（§14），删除 `[OPTIONAL]` 块即可。本规格是权威来源；模板与规格冲突时以规格为准，修模板而非改规格。**  
 所有"可以这么写也可以那么写"的位置都已固定下来。除非用户明确要求，**不要**临时引入新依赖、新组件库、新色板。
 
 ---
@@ -357,9 +357,12 @@ cursor pointer（折叠时）
 
 **Excel 上传区 `.upload-zone`**：虚线 border `2px dashed var(--c-border-strong)`，圆角 `var(--r-md)`，`padding 20px`，居中；拖拽悬停时 border 变 primary，背景 `var(--c-primary-soft)`，有 `dragover / dragleave` 事件。上传文件须符合 **`excel-spec.md`**：Sheet 名与表头字段名**全部中文**（姓名、账号、密码…），禁止英文列名。
 
-**表单字段标签**（与 Excel 导入列对齐，全部中文）：姓名、账号、密码、学科1、学分1、学科2、学分2、卡号、卡号密码、备注。
+**表单字段标签**（与 Excel 导入列对齐，全部中文）：
 
-字段显示必须跟 `docs/API_REQUIREMENTS.md` 对齐：学科/学分字段仅在需要按学科或学分选择课程时作为业务字段；卡号/卡号密码仅在 `购卡 / 充值` 被选择时参与业务逻辑。为了兼容 Excel round-trip，后端可继续接受空列，但 UI 不应把未选择能力展示成必填需求。
+- **Site profile A（默认）**：姓名、账号、密码、学科1、学分1、学科2、学分2、卡号、卡号密码、备注。
+- **Site profile B（公需年度型）**：见 §14；**不展示**学科/学分/卡号业务字段（除非 gap 明确混合站点）。
+
+字段显示必须跟 `docs/API_REQUIREMENTS.md` 中的 **`site_profile`** 对齐：A 型下学科/学分仅在需要按学科选课时出现；卡号仅在 `购卡 / 充值` 被选择时出现。B 型下以 **目标年度** 为必填业务字段（至少选当前年）。为了兼容 Excel round-trip，后端可继续接受空列，但 UI 不应把未选择能力展示成必填需求。
 
 **表单底部操作行**：右对齐，`display flex justify-content flex-end gap 10px`；包含「导入 Excel」（outline 按钮）和「添加」（primary 按钮 + `<kbd>N</kbd>` 提示）。
 
@@ -782,3 +785,60 @@ Tabs 根据 `docs/API_REQUIREMENTS.md` 生成：基础为 `基本信息 / 课程
 - [ ] 鼠标 hover stat tile 时卡片轻微上移
 
 任何一条不过，必须修，不能推到后续阶段。
+
+---
+
+## 14. Site profile B — 公需年度型 Web UI（固定）
+
+当 `docs/API_REQUIREMENTS.md` 为 **B — 公需年度型** 时，§6.5 添加面板按本节实现，**替代**学科/学分表单。参考 `liangshangongxu/webui/templates/index.html` + `app.py` `recent_five_years()`。
+
+### 14.1 近 5 年年度选择
+
+```javascript
+// 服务端注入或内联计算（Asia/Shanghai 当前年）
+function recentFiveYears() {
+  const y = new Date().getFullYear();
+  return [0,1,2,3,4].map(i => String(y - i));
+}
+```
+
+- 容器 class：**`.year-pills`**，`display flex flex-wrap gap 8px`。
+- 每个年度：**`<label class="year-pill">`** 内含 `type="checkbox"`，`name="target_years"`，`value="<年份>"`。
+- **默认勾选当前自然年**；至少保留 1 个选中（提交前校验，否则 toast「请至少选择一个目标年度」）。
+- 文案：`2026年` 格式（年份 + 「年」），不用英文缩写。
+
+### 14.2 添加面板字段（B 型）
+
+| 字段 | 控件 | 说明 |
+|------|------|------|
+| 账号 | `input` | 必填 |
+| 密码 | `input type=password` | 必填 |
+| 备注 | `input` | 可选 |
+| 目标年度 | `.year-pills` 多选 | 见 §14.1 |
+| 任务模式 | `radio` 或 segmented | `标准`（normal）/ `快速`（fast），默认标准 |
+
+**不展示**：姓名（登录后回填展示）、学科1/2、学分、卡号。
+
+底部操作行仍为「导入 Excel」+「添加」（`N` 快捷键）。
+
+### 14.3 列表与详情
+
+- 列表列：账号、备注、**目标年度摘要**（如 `2026、2025`）、状态、进度（可用细条 `progress_percent` 或按年最小完成率）。
+- 展开/抽屉：**按年分组**展示 `year_status`（已购、要求学时、已获得、是否完成、当前课程名）；**无**「学科·学分」pill 行。
+- 课程 Tab（若有）：按 **年度 → 课程列表** 嵌套，排序与 `queue_rank` 无关（B 型无 planner）。
+
+### 14.4 API 形状（B 型）
+
+| 方法 | 路径 | Body 要点 |
+|------|------|-----------|
+| POST | `/api/accounts` | `{ username, password, remark?, target_years: string[], report_mode?: "normal"\|"fast" }` |
+| PATCH | `/api/accounts/{id}` | 同上；`requeue` 行为同 A 型 |
+
+`GET /api/accounts/{id}` 的 `extra` 含 `year_status`、`current_year`、`phase`（中文 phase 标签映射见项目 `view_format`）。
+
+### 14.5 B 型验收追加项
+
+- [ ] 添加面板显示近 5 年 pill，当前年默认选中
+- [ ] 未选年度提交被拦截（中文 toast）
+- [ ] 列表/抽屉无学科1/学分必填提示
+- [ ] Excel 导入列与 §14.2 一致（见 `excel-spec.md` §2B）

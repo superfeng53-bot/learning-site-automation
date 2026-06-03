@@ -7,7 +7,7 @@ Goal: turn the single-account runner into a long-running scheduler that drives m
 - [ ] `<svc>/persistence/store.py` with SQLite (WAL) schema for `accounts / runs / kv`, plus `ai_subject_cache` when LLM subject mapping is enabled, plus optional tables from `docs/API_REQUIREMENTS.md` such as `apply_queue / credit_applications`
 - [ ] `<svc>/worker.py` `AccountWorker.run_once(account)` runs the full single-account pipeline
 - [ ] If credit application is in scope per `docs/API_REQUIREMENTS.md`, `<svc>/apply_worker.py` `ApplyWorker.process_one(now)` consumes the apply queue independently; otherwise no apply worker is generated
-- [ ] `<svc>/scheduling.py` implements stable per-account **8:00 daily-window spread** (`daily_eligible_at`); all day-bound deferrals use it (learning + apply)
+- [ ] **A 型**：`<svc>/scheduling.py` implements stable per-account **8:00 daily-window spread** (`daily_eligible_at`); all day-bound deferrals use it (learning + apply). **B 型（公需无单日限制）**：可省略 `scheduling.py` 及 Worker 内「今日学满 N 门 → 明日」逻辑（见 `requirements-year-driven.md` §4.3）
 - [ ] `<svc>/orchestrator.py` ticks every N seconds, claims queued accounts under a concurrency limit
 - [ ] `<svc>/web/app.py` FastAPI serves the console + `/api/*` endpoints matching `web-ui-spec.md` §8 and `excel-spec.md`
 - [ ] `<svc>/web/templates/index.html` generated strictly per `web-ui-spec.md` (简体中文, 复制日志, single file, ≤ 1600 LOC)
@@ -19,7 +19,12 @@ Goal: turn the single-account runner into a long-running scheduler that drives m
 
 ## Read First
 
-Read `docs/API_REQUIREMENTS.md` first, then read the user-provided requirements doc if any. Otherwise, copy `templates/requirements.md` to `docs/通用需求说明.md` and **adapt** the placeholders (`<PLATFORM>`, `<DOMAIN>`, captcha kind, quotas, selected optional capabilities) to the actual site.
+Read `docs/API_REQUIREMENTS.md` first (note **`site_profile`** in `site-profiles.md`), then read the user-provided requirements doc if any. Otherwise:
+
+- **A — 学科规划型**：copy `templates/requirements.md` → `docs/通用需求说明.md`
+- **B — 公需年度型**：copy `templates/requirements-year-driven.md` → `docs/通用需求说明.md`
+
+Adapt placeholders (`<PLATFORM>`, `<DOMAIN>`, captcha kind, quotas, selected optional capabilities) to the actual site.
 
 Capability-dependent rules:
 
@@ -28,6 +33,18 @@ Capability-dependent rules:
 - If `购卡 / 充值` is selected, include card fields and `/api/accounts/{id}/recharge`; otherwise keep card columns only if the user still needs them for import compatibility.
 - If `注册` is selected, add registration service/API actions separately from account import; do not assume every imported account should be auto-registered.
 - If `学科列表 / 分类列表` is not selected and the site does not need subject requirements, simplify `requirements_json` and UI fields to the confirmed requirement model.
+
+### Site profile B — 公需年度型 Worker
+
+When `site_profile: B`:
+
+- Store **`target_years_json`** on `accounts` (TEXT JSON array); omit or leave empty `requirements_json`.
+- `AccountWorker.run_once`: session → **`for year in ordered_target_years(account): run_year_task(...)`** — no `course_planner`, no `ApplyWorker`.
+- `extra_json` must track `year_status`, `current_year`, `report_mode`, `phase` (see `templates/requirements-year-driven.md`).
+- Web UI + Excel per `web-ui-spec.md` §14 and `excel-spec.md` §2B.
+- Schema: **omit** `apply_queue`, `credit_applications`, `ai_subject_cache` unless documented gap.
+- Account status machine: **no** `waiting_apply`.
+- **No daily learn/apply quota**（公需无单日限制）：Worker **不**调用「今日已学 N 门 → `daily_eligible_at(明日)`」；`config.py` **不设** `MAX_LEARN_PER_DAY` / `MAX_APPLY_PER_DAY`；课程单元 **无** `daily_learn_date`。`scheduling.py` 的 8:00 spread **可省略**（仅 A 型或用户明确要求日切错峰时再实现）。
 
 ## Schema (SQLite WAL)
 
@@ -321,9 +338,16 @@ UPDATE apply_queue SET status='pending' WHERE status='in_flight';
 
 Change per site as needed but keep them as constants in `<svc>/config.py`. Do not expose to UI unless the user asks for it.
 
-## Web Console — strict spec, no template
+## Web Console — copy template, adapt to site
 
-The console is **specified, not templated**: read **`web-ui-spec.md`** and generate `<svc>/web/templates/index.html` yourself.
+The console has a **pre-built template**: copy `templates/code/web/index.html` to `<svc>/web/templates/index.html`, then:
+
+1. Replace `{{ PLATFORM }}` and `{{ LOGO_LETTER }}` with actual values.
+2. If `site_profile=B`: replace the add-form section with `web-ui-spec.md §14` year-pill version.
+3. Delete `[OPTIONAL:xxx]` blocks for features not in `docs/API_REQUIREMENTS.md` scope.
+4. Verify all items in `web-ui-spec.md §12–§13`. Fix any that fail.
+
+Read **`web-ui-spec.md`** as authoritative spec — the template is an implementation of it. If template and spec diverge, fix the template copy.
 
 **固定要求（不可省略）**：
 

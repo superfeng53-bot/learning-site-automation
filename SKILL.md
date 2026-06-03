@@ -38,8 +38,9 @@ If any of (1)-(4) is missing, ask the user **once** with `AskQuestion` before in
 4. **Preserve site-specific knowledge in code, not in this skill**: every site differs in captcha kind, response shape, anti-bot tricks. The skill is a scaffold, not a copy-paste template.
 5. **Never commit the test account**: add `data/`, `.run/`, cookies, and account JSONs to `.gitignore` in phase 1.
 6. **Don't try to finish in one shot**: split work across phases + specs. **Read `cursor-agent-playbook.md`** before phase 1 for handoff files, New Chat boundaries, sub-agents, and other skill/MCP usage.
-7. **Capability scope gate**: at the start of phase 2, use `AskQuestion` multi-select to confirm optional API capabilities. Mandatory capabilities are login/session, account/profile info, course list, course detail/status, progress reporting, exam if present, and credit application if present. Optional choices include 学科列表/分类列表、注册、购卡/充值、其他. Persist the answer in `docs/API_REQUIREMENTS.md` and make later phases follow it.
-8. **Implementation assurance**: do not announce a phase complete while any DoD item is unchecked or any open gap lacks user acceptance. See **Implementation Assurance** below.
+7. **Site profile gate**: at the start of phase 2, confirm **`site_profile`** (A 学科规划型 vs B 公需年度型) per `site-profiles.md`; then use `AskQuestion` multi-select for optional API capabilities. A 型：学科/申请/规划见 `templates/requirements.md`；B 型：按年取课、无学科匹配、无申请，见 `templates/requirements-year-driven.md` 与 `liangshangongxu` 参考实现。
+8. **Capability scope gate**: mandatory capabilities are login/session, account/profile info, course list, course detail/status, progress reporting, exam if present, and credit application if present (B 型通常 skip 申请). Optional choices include 学科列表/分类列表、注册、购卡/充值、其他 — **B 型默认不选学科列表**. Persist profile + scope in `docs/API_REQUIREMENTS.md`.
+9. **Implementation assurance**: do not announce a phase complete while any DoD item is unchecked or any open gap lacks user acceptance. See **Implementation Assurance** below.
 
 ## Implementation Assurance
 
@@ -76,7 +77,7 @@ At **end of every phase**, the parent agent MUST:
 
 **Phase 1–2 analysis (Cursor 内):** **必须**用 MCP **`cursor-ide-browser`**（Cursor 内置浏览器）做现场解析；可叠 **`Task` explore** 或项目 **`api-recon` subagent**（见 playbook §1.1、§3、§5）。browser 定稿后可 Read **`shell` skill** 做 HTTP 对照。父 agent 合并进 `docs/LOGIN_FLOW.md` / `API_REFERENCE.md`。多站点可选 **`create-rule`** / **`memory-merger`**。
 
-**Phase 5:** Web UI per **`web-ui-spec.md`** (简体中文 + 复制日志); Excel per **`excel-spec.md`** + **`spreadsheet` skill**.
+**Phase 4–5 代码生成策略**：优先**复制 `templates/code/` 模板**，对接 API，不从零写。具体对接点见 SKILL.md §Code Templates。Web UI per **`web-ui-spec.md`**（模板为 `templates/code/web/index.html`，替换占位符即可）; Excel per **`excel-spec.md`** + **`spreadsheet` skill**。
 
 Use **`rename_chat`** MCP at phase boundaries: `Phase N · <站点> · <状态>`.
 
@@ -98,9 +99,9 @@ Use `Task` with `subagent_type=generalPurpose` or `explore`. Copy DoD from the p
 | Phase 1 captcha + login | Finicky iteration | Implement `captcha.py` + `login.py` from draft path |
 | Phase 2 API discovery | Per-domain network dumps | One explore agent → `docs/api-discovery/<domain>.md` (max 2 domains each) |
 | Phase 2 service module | Parallel-friendly | One generalPurpose agent per `*Service` + `cli_*.py` |
-| Phase 5 web UI | Pure presentation | `index.html` per `web-ui-spec.md` + verification checklist |
-| Phase 5 FastAPI | After store stable | `web/app.py` per `web-ui-spec.md` §8 + `excel-spec.md` |
-| Phase 5 Excel | Formatting rules | Template/export xlsx under `spreadsheet` skill + `excel-spec.md` |
+| Phase 5 web UI | Pure presentation | 复制 `templates/code/web/index.html` → 替换占位符 → 按 B 型/可选能力删减块；验收 `web-ui-spec.md` §12–§13 |
+| Phase 5 service layer | After API confirmed | 复制 `templates/code/service/{store,orchestrator,worker_base,apply_worker,web/app,excel_io}.py` → 实现 `run_pipeline()` → 注入 session_manager |
+| Phase 5 Excel | Formatting rules | `excel_io.py` 模板已含导入/导出；仅在有非标列时借 `spreadsheet` skill 调整 |
 | Phase 6 packaging | Platform quirks | `start.sh`, `build.sh`, PyInstaller spec |
 
 ### What stays in the parent agent
@@ -172,7 +173,7 @@ At most four times across the whole run:
 
 1. Start — missing inputs (1)–(4)
 2. End of phase 1 — captcha kind ambiguous
-3. Start of phase 2 — confirm optional API capability scope (multi-select; write `docs/API_REQUIREMENTS.md`)
+3. Start of phase 2 — confirm `site_profile` (A/B) + optional API capability scope (write `docs/API_REQUIREMENTS.md`)
 4. End of phase 4 — continue to phase 5 or stop
 
 Bundling **gap acceptance** or **scope cut** into the normal phase-gate confirmation does **not** count as an extra question.
@@ -193,12 +194,69 @@ Bundling **gap acceptance** or **scope cut** into the normal phase-gate confirma
 
 ## Auxiliary Resources In This Skill
 
+- `site-profiles.md` — **A 学科规划型 vs B 公需年度型**（双轨架构、选型、与 liangshangongxu 对照）
 - `cursor-agent-playbook.md` — **Cursor orchestration**: built-in browser first (§1.1), handoff, sub-agents, parsing skill combos (§5)
-- `web-ui-spec.md` — phase-5 web console (中文 UI, 复制日志, no HTML template)
+- `web-ui-spec.md` — phase-5 web console 完整规范（中文 UI, 复制日志）
 - `excel-spec.md` — 中文模板/导出列对齐, `error_log_text`
 - `phase1-login-recon.md` … `phase6-packaging.md` — per-phase detail (read only when entering that phase)
-- `templates/requirements.md`, `templates/api-requirements.md`, `templates/account.json`, `templates/project-skeleton.md`
+- `templates/requirements.md`, `templates/requirements-year-driven.md`（B 型）, `templates/api-requirements.md`, `templates/account.json`, `templates/project-skeleton.md`
 - `templates/agents/api-recon.md` + `templates/api-recon-agent.md`（安装说明；复制前者到 `.cursor/agents/api-recon.md`）
 - `scripts/init_project.py`, `scripts/captcha_probe.py`
+- **`templates/code/`** — 预写通用代码模板（见下方 §Code Templates）
 
 Read phase files and specs **only when entering that phase/sub-task**. Do not preload everything.
+
+---
+
+## Code Templates — 通用代码直接复制，只对接 API
+
+所有通用层已预写完毕，放在 `templates/code/`。每个网站只需：
+1. 复制对应文件到项目包目录
+2. 将注释中的 `TODO` / `[OPTIONAL:xxx]` 按站点实际情况填入或删除
+3. 实现标注 `@abstractmethod` 的方法（site-specific API 对接）
+
+### 文件清单
+
+```
+templates/code/
+├── run_service.py                  # 服务启动入口（复制到项目根）
+├── service/
+│   ├── runtime.py                  # 单实例锁、端口探测、endpoint.json ── 完整通用，直接复制
+│   ├── scheduling.py               # 8:00 错峰 daily_eligible_at ── A 型用，B 型可省
+│   ├── store.py                    # SQLite WAL 持久层 ── 按 [OPTIONAL] 注释裁剪
+│   ├── orchestrator.py             # 调度器 tick ── 完整通用，直接复制
+│   ├── worker_base.py              # AccountWorkerBase ── 继承并实现 run_pipeline()
+│   ├── apply_worker.py             # ApplyWorkerBase ── [OPTIONAL:申请学分]
+│   └── web/
+│       ├── app.py                  # FastAPI 路由 ── 替换 <PLATFORM>，注入 store/orch
+│       └── excel_io.py             # 导入/导出 ── 按 A/B 型选列
+├── web/
+│   └── index.html                  # 完整 Web UI（vanilla JS，≤1600 行）── 替换占位符
+└── runner/
+    ├── course_runner.py            # CourseRunner（A 型）+ YearTaskRunner（B 型）
+    └── ...
+```
+
+### 每个文件的「对接点」
+
+| 文件 | 你需要做的事 |
+|------|------------|
+| `runtime.py` | 直接复制，无需修改 |
+| `scheduling.py` | 直接复制，在 `config.py` 设置 `DAILY_START_HOUR` / `DAILY_SPREAD_SECONDS` |
+| `store.py` | 删除不需要的 `[OPTIONAL:xxx]` 块（B 型删学科列，无申请删 apply_queue 等） |
+| `orchestrator.py` | 直接复制；`worker_factory` 参数传你的 `AccountWorker` 构造函数 |
+| `worker_base.py` | 继承 `AccountWorkerBase`，实现 `run_pipeline(account, client) -> PipelineResult` |
+| `apply_worker.py` | 继承 `ApplyWorkerBase`，实现 `do_apply_credit(client, project_id, task)` |
+| `web/app.py` | 替换 `PLATFORM`/`LOGO_LETTER`；`run_service.py` 中注入 `app.state.store/orch/excel_io` |
+| `web/excel_io.py` | A 型保持默认；B 型将 `IMPORT_COLS` 替换为 `B_IMPORT_COLS` |
+| `web/index.html` | 替换 `{{ PLATFORM }}`/`{{ LOGO_LETTER }}`；B 型替换添加面板（§14）；删除 `[OPTIONAL]` 块 |
+| `runner/course_runner.py` | 调整 `WATCH_THRESHOLD`、字段名、`_watch_lesson` 参数名；B 型用 `YearTaskRunner` |
+| `run_service.py` | 替换 `<SVC>`/`<PKG>`；传入真实 `session_manager` |
+
+### 使用规则
+
+1. **先复制，再对接**：在 phase 4/5 开始时，先把对应模板复制到项目，再填 TODO，不要从头写。
+2. **`[OPTIONAL:xxx]` 注释**：站点不需要某功能时，整段删除（含开始/结束注释行）；保留的功能只需取消注释或保持原样。
+3. **`index.html` 的 B 型改造**：如果 `site_profile=B`，把添加表单替换为 `web-ui-spec.md §14` 的年度 pill 版本；其余组件（stats、table、drawer、toast 等）保持不变。
+4. **web-ui-spec.md 仍是权威**：模板是规范的实现。如果两者冲突，以规范为准，修模板。
+5. **不要把对接代码写进模板文件**：site-specific 代码（API 端点、字段名、错误码）只在子类/caller 中，不要反向修改 `templates/code/` 里的文件。

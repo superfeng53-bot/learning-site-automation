@@ -11,6 +11,18 @@ Goal: stitch the confirmed phase-2 services into one `CourseRunner` that, given 
 - [ ] All transient failures auto-recover via phase-3 plumbing; only business failures stop the run
 - [ ] Optional `--account data/account.json --auto-login` mode that combines `ensure_session` with the runner
 
+## Site profile B — Year task runner (alternative to CourseRunner)
+
+When `docs/API_REQUIREMENTS.md` specifies **B — 公需年度型** (`site-profiles.md`):
+
+- [ ] `<pkg>/task_api.py` (or `year_runner.py`) exposes `run_year_task(client, year, ...) -> YearTaskResult`
+- [ ] `run_year.py` CLI: `--cookies` + `--years 2026,2025` runs years **in list order**
+- [ ] Inside each year: `get_year_courses` → filter pending → serial `study_course` → `take_exam` per course when required
+- [ ] Completion probe: certificate `earned_hours >= required_hours` for that year
+- [ ] **Do not** generate `course_planner.py` or subject-mapping for B-only projects
+
+Phase 5 worker calls this module in a `for year in account.target_years` loop instead of `CourseRunner.run(project_id)`.
+
 ## Read First
 
 Read `docs/API_REQUIREMENTS.md` and `<pkg>/API_REFERENCE.md` before writing the runner:

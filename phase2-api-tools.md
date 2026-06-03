@@ -11,9 +11,22 @@ Goal: wrap the confirmed business endpoints the site exposes into thin `<pkg>/*.
 - [ ] Every service uses the shared `HttpClient` (no ad-hoc `requests.post` calls)
 - [ ] All failure paths return a `SwwResponse`-shaped dataclass (or equivalent) with `ok / message / code / hint / raw`
 
-## Step 0 — Confirm API Capability Scope
+## Step 0 — Confirm Site Profile + API Capability Scope
 
-Before any Phase 2 browser reconnaissance or service generation, the parent agent MUST ask the user to confirm which site capabilities are in scope. Use one `AskQuestion` interaction with multi-select for optional capabilities, then write the confirmed result to `docs/API_REQUIREMENTS.md`.
+Before any Phase 2 browser reconnaissance or service generation:
+
+1. Read **`site-profiles.md`** and confirm **`site_profile`** with the user (single choice):
+   - **A — 学科规划型**（默认）：`templates/requirements.md`，学科/学分 + `course_planner` + 可选申请
+   - **B — 公需年度型**：`templates/requirements-year-driven.md`，`target_years` + `run_year_task`，参考 `liangshangongxu`；**不**实现学科列表与申请学分（除非 gap 另议）
+2. Use one `AskQuestion` multi-select for **optional** API capabilities (B 型通常不选「学科列表 / 分类列表」).
+3. Write `docs/API_REQUIREMENTS.md` with a `## Site profile` section at the top, then mandatory/optional lists.
+
+Profile-specific Phase 2 domains:
+
+| Profile | Extra domains beyond login/member/study/exam |
+|---------|-----------------------------------------------|
+| A | `course` catalog + optional `credit`; optional subject list API |
+| B | `course` as **yearly_learning + year_courses + certificate**; `task` or `year_runner`; skip `credit` and subject-list APIs |
 
 Mandatory capabilities are always in scope:
 
