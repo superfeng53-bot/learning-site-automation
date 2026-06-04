@@ -13,13 +13,60 @@
 
 ## 选型决策（AskQuestion 建议）
 
-在 Phase 2 能力范围确认时，**先**问站点画像（单选），再问可选 API 能力（多选）。画像决定需求模型与 UI/Excel 形态；可选能力在 B 型下通常大量为「未选」。
+Phase 2 **先定画像、再定可选能力**——但 **A / B 两条路径不对称**：
+
+| 画像 | Phase 2 要问什么 |
+|------|------------------|
+| **A** | ① 画像单选（若用户目标未写明）→ ② **必选**可选能力多选（学科列表、注册、购卡等） |
+| **B** | ① 画像单选（若未从用户目标推断为公需）→ ② **默认不写多选**；直接套用下方「B 型默认范围」；仅当用户目标或 Phase 1 侦察出现购卡/注册/非公需专题时，再 **追加一问**（见 §B 型快速路径） |
+
+**可从用户输入推断 B、免画像单选**：领域目标含「公需 / 按年 / 年度学时 / 近五年」等，且 URL/页面无学科规划特征 → 父 agent 在 Phase 2 开场说明「按 B 型公需年度型执行」，写入 `API_REQUIREMENTS.md`，**不单独消耗 AskQuestion**；若用户在下一条纠正，再改画像。
+
+画像单选文案（仅 A/B 不明时）：
 
 ```text
 该站点属于哪种自动化画像？
 - A 学科规划型：账号带学科/学分需求，分配时做学科匹配与课表规划，可有申请学分队列
 - B 公需年度型：仅选目标年度（近 5 年），按年拉课表并串行学习+考试，无学科匹配、无申请学分
 ```
+
+---
+
+## B 型快速路径（Phase 2–5 默认，少问多写）
+
+选定 **B — 公需年度型** 后，父 agent **立即**从 `templates/api-requirements-b.md` 生成 `docs/API_REQUIREMENTS.md`（替换 `<PLATFORM>` 等占位），并按下表执行；**不要**再跑 A 型那套「五项可选能力全量多选」。
+
+### B 型默认纳入（Mandatory + Phase 2 domains）
+
+| 项 | 默认 |
+|----|------|
+| 登录 / 会话、账号信息 | yes |
+| 按年课包 `yearly_learning`、指定年课表、证书/年度达标 | yes（`course` + `task`/`year_runner`） |
+| 学习进度上报、课内考试（侦察到则有） | yes |
+| 学科列表 / 分类列表 | **skip**（Explicit Skips） |
+| 申请学分 `credit` | **skip**（证书达标即可） |
+| `course_planner` / `apply_queue` / `scheduling` 日配额 | **不实现** |
+| 需求文档 | `templates/requirements-year-driven.md` → `docs/通用需求说明.md` |
+| Web / Excel | `web-ui-spec.md` §14 + `excel-spec.md` §2B |
+
+### 仅在这些情况下追加 AskQuestion（单选或多选其一即可）
+
+| 触发 | 追问内容 |
+|------|----------|
+| 用户目标含购卡、充值、未购课 | 是否实现「购卡 / 充值」可选域 |
+| 用户目标含注册、开户 | 是否实现「注册」可选域 |
+| 侦察到除公需外的专业课入口 | 停止默认 B：写 `docs/gaps/PHASE2_mixed_profile.md`，请用户选拆项目或改 A |
+| 其他非标流程 | 「其他」+ 一句说明 |
+
+未触发上表 → **零追加提问**，侦察阶段再判定 exam 是否存在（与 A 相同，不提前让用户勾选）。
+
+### B 型 Phase 2 Domain Plan（固定顺序）
+
+```text
+member → course（yearly + year_courses + certificate）→ study → exam（if present）→ task|year_runner
+```
+
+**不要**侦察或实现：`credit`（申请）、`/subject/list`（除非 gap 已接受）。
 
 ---
 
@@ -126,23 +173,12 @@ Worker：`AccountWorker.run_once` 调用 `YearTaskRunner.run(account)`，内部�
 
 ## 文档落点清单
 
-| 画像 | `docs/通用需求说明.md` 来源 |
-|------|---------------------------|
-| A | `templates/requirements.md` |
-| B | `templates/requirements-year-driven.md` |
+| 画像 | `docs/通用需求说明.md` | `docs/API_REQUIREMENTS.md` |
+|------|------------------------|----------------------------|
+| A | `templates/requirements.md` | `templates/api-requirements.md` + 用户多选 |
+| B | `templates/requirements-year-driven.md` | **`templates/api-requirements-b.md`**（预填，见 §B 型快速路径） |
 
-`docs/API_REQUIREMENTS.md` 首段示例：
-
-```markdown
-## Site profile
-- **B — 公需年度型**（参考 liangshangongxu）
-
-## Mandatory
-...
-## Explicit Skips
-| 学科列表 / 分类列表 | B 型公需按年取课，不用学科目录 | yes |
-| Credit application | 站点无申请流程，证书学时达标即可 | yes |
-```
+B 型 **不要**手写精简版 `API_REQUIREMENTS`；从 B 模板复制后只改侦察得到的站点参数（`parent_id`、购课策略、是否保留购卡域等）。
 
 ---
 

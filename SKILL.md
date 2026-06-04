@@ -28,7 +28,7 @@ If any of (1)-(4) is missing, ask the user **once** with `AskQuestion` before in
 | 3 | Session reuse, error classification, retry policy | `session_manager.py`, `responses.py`, `captcha_limiter.py` | `phase3-stability.md` |
 | 4 | End-to-end single-account runner | `course_runner.py` + `run_course.py` entry | `phase4-end-to-end.md` |
 | 5 | Multi-account SQLite scheduler + FastAPI web console | `<svc>/orchestrator.py`, `worker.py`, `apply_worker.py`, `web/app.py` | `phase5-service.md` |
-| 6 | One-click start, single-instance (+ reopen WebUI on relaunch), port fallback, single-file build (`{平台}_{DD}_{MM}`, console logs), CI | `start.sh`, `build.sh`, `scripts/build.py`, `.github/workflows/ci.yml` | `phase6-packaging.md` |
+| 6 | One-click start, single-instance (+ reopen WebUI on relaunch), port fallback, single-file build (`{平台}_{MM}_{DD}`, console logs), CI | `start.sh`, `build.sh`, `scripts/build.py`, `.github/workflows/ci.yml` | `phase6-packaging.md` |
 
 ## Hard Workflow Rules
 
@@ -38,8 +38,8 @@ If any of (1)-(4) is missing, ask the user **once** with `AskQuestion` before in
 4. **Preserve site-specific knowledge in code, not in this skill**: every site differs in captcha kind, response shape, anti-bot tricks. The skill is a scaffold, not a copy-paste template.
 5. **Never commit the test account**: add `data/`, `.run/`, cookies, and account JSONs to `.gitignore` in phase 1.
 6. **Don't try to finish in one shot**: split work across phases + specs. **Read `cursor-agent-playbook.md`** before phase 1 for handoff files, New Chat boundaries, sub-agents, and other skill/MCP usage.
-7. **Site profile gate**: at the start of phase 2, confirm **`site_profile`** (A 学科规划型 vs B 公需年度型) per `site-profiles.md`; then use `AskQuestion` multi-select for optional API capabilities. A 型：学科/申请/规划见 `templates/requirements.md`；B 型：按年取课、无学科匹配、无申请，见 `templates/requirements-year-driven.md` 与 `liangshangongxu` 参考实现。
-8. **Capability scope gate**: mandatory capabilities are login/session, account/profile info, course list, course detail/status, progress reporting, exam if present, and credit application if present (B 型通常 skip 申请). Optional choices include 学科列表/分类列表、注册、购卡/充值、其他 — **B 型默认不选学科列表**. Persist profile + scope in `docs/API_REQUIREMENTS.md`.
+7. **Site profile gate** (phase 2): confirm **`site_profile`** per `site-profiles.md`. **A 型**：画像确认后 → 可选能力 **多选** `AskQuestion` → `templates/api-requirements.md` + `templates/requirements.md`. **B 型**：画像确认后 → 复制 **`templates/api-requirements-b.md`** 与 **`requirements-year-driven.md`**，套用 **§B 型快速路径** 默认跳过项；**不**跑 A 型全量多选，仅在购卡/注册/混合专题时追加窄问。用户目标已写明公需/按年时可推断 B，免画像单选。
+8. **Capability scope gate**: mandatory flows are login/session, account info, course/progress, exam **if recon finds it**. **A 型**：credit application if present; optional 学科列表/注册/购卡/其他 由多选决定。**B 型**：固定 skip 学科列表 + 申请学分 + planner/apply_queue/日配额；购卡/注册仅在有触发时写入 Optional Selected。Persist in `docs/API_REQUIREMENTS.md`.
 9. **Implementation assurance**: do not announce a phase complete while any DoD item is unchecked or any open gap lacks user acceptance. See **Implementation Assurance** below.
 
 ## Implementation Assurance
@@ -156,7 +156,7 @@ These apply to every generated project unless the user explicitly opts out:
 | Excel 导入 | 只解析中文表头（姓名/账号/密码/学科1…）；错误提示中文；见 `excel-spec.md` §2 |
 | Excel 导出 | 前 A–J 列与导入模板完全一致；状态/日志等中文列追加在后；见 `excel-spec.md` §3 |
 | 复制日志 | 失败/重试账号一键复制 `error_log_text`；见 `web-ui-spec.md` §4.12 + `excel-spec.md` §4 |
-| 启动与打包 | 一键启动、单实例、二次启动只开 WebUI、端口避让、单文件 PyInstaller、`{平台}_{日}_{月}` 命名、`console=True`；见 `phase5-service.md` + `phase6-packaging.md` |
+| 启动与打包 | 一键启动、单实例、二次启动只开 WebUI、端口避让、单文件 PyInstaller、`{平台}_{月}_{日}` 命名、`console=True`；见 `phase5-service.md` + `phase6-packaging.md` |
 
 ## Captcha Decision Tree (site-specific tweak point)
 
@@ -173,7 +173,7 @@ At most four times across the whole run:
 
 1. Start — missing inputs (1)–(4)
 2. End of phase 1 — captcha kind ambiguous
-3. Start of phase 2 — confirm `site_profile` (A/B) + optional API capability scope (write `docs/API_REQUIREMENTS.md`)
+3. Start of phase 2 — confirm `site_profile` (A/B) if not inferable; **A 型** optional API multi-select; **B 型** apply `api-requirements-b.md` defaults (extra ask only for 购卡/注册/混合). Writes `docs/API_REQUIREMENTS.md`.
 4. End of phase 4 — continue to phase 5 or stop
 
 Bundling **gap acceptance** or **scope cut** into the normal phase-gate confirmation does **not** count as an extra question.
@@ -199,7 +199,7 @@ Bundling **gap acceptance** or **scope cut** into the normal phase-gate confirma
 - `web-ui-spec.md` — phase-5 web console 完整规范（中文 UI, 复制日志）
 - `excel-spec.md` — 中文模板/导出列对齐, `error_log_text`
 - `phase1-login-recon.md` … `phase6-packaging.md` — per-phase detail (read only when entering that phase)
-- `templates/requirements.md`, `templates/requirements-year-driven.md`（B 型）, `templates/api-requirements.md`, `templates/account.json`, `templates/project-skeleton.md`
+- `templates/requirements.md`, `templates/requirements-year-driven.md`（B 型）, `templates/api-requirements.md`（A 型）, `templates/api-requirements-b.md`（B 型预填，少问）, `templates/account.json`, `templates/project-skeleton.md`
 - `templates/agents/api-recon.md` + `templates/api-recon-agent.md`（安装说明；复制前者到 `.cursor/agents/api-recon.md`）
 - `scripts/init_project.py`, `scripts/captcha_probe.py`
 - **`templates/code/`** — 预写通用代码模板（见下方 §Code Templates）
@@ -242,8 +242,9 @@ templates/code/
 | 文件 | 你需要做的事 |
 |------|------------|
 | `runtime.py` | 直接复制，无需修改 |
-| `scheduling.py` | 直接复制，在 `config.py` 设置 `DAILY_START_HOUR` / `DAILY_SPREAD_SECONDS` |
-| `store.py` | 删除不需要的 `[OPTIONAL:xxx]` 块（B 型删学科列，无申请删 apply_queue 等） |
+| `scheduling.py` | **A 型**：复制并在 `config.py` 设日窗；**B 型**：不复制 |
+| `store.py` | **A 型**：按可选能力删 `[OPTIONAL]`；**B 型**：删学科列、`apply_queue`、`requirements_json` 学科槽，保留 `target_years_json` |
+| `apply_worker.py` | **B 型**：不复制 |
 | `orchestrator.py` | 直接复制；`worker_factory` 参数传你的 `AccountWorker` 构造函数 |
 | `worker_base.py` | 继承 `AccountWorkerBase`，实现 `run_pipeline(account, client) -> PipelineResult` |
 | `apply_worker.py` | 继承 `ApplyWorkerBase`，实现 `do_apply_credit(client, project_id, task)` |

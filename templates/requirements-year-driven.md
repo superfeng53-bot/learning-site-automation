@@ -16,7 +16,7 @@
 3. **多账号并行**：线程池并行账号；**单账号内年度与课程串行**。
 4. **Web 控制台**：近 5 年 pill 多选、列表按年进度、无学科表单。
 
-须对齐 `docs/API_REQUIREMENTS.md`（`site_profile: B`）。
+须对齐 `docs/API_REQUIREMENTS.md`（`site_profile: B`；Phase 2 由 **`templates/api-requirements-b.md`** 生成，见 `site-profiles.md` §B 型快速路径，无需 A 型可选能力全量多选）。
 
 ---
 

@@ -13,20 +13,39 @@ Goal: wrap the confirmed business endpoints the site exposes into thin `<pkg>/*.
 
 ## Step 0 — Confirm Site Profile + API Capability Scope
 
-Before any Phase 2 browser reconnaissance or service generation:
+Before any Phase 2 browser reconnaissance or service generation, read **`site-profiles.md`**（含 **§B 型快速路径**）。
 
-1. Read **`site-profiles.md`** and confirm **`site_profile`** with the user (single choice):
-   - **A — 学科规划型**（默认）：`templates/requirements.md`，学科/学分 + `course_planner` + 可选申请
-   - **B — 公需年度型**：`templates/requirements-year-driven.md`，`target_years` + `run_year_task`，参考 `liangshangongxu`；**不**实现学科列表与申请学分（除非 gap 另议）
-2. Use one `AskQuestion` multi-select for **optional** API capabilities (B 型通常不选「学科列表 / 分类列表」).
-3. Write `docs/API_REQUIREMENTS.md` with a `## Site profile` section at the top, then mandatory/optional lists.
+### 0.1 定画像（A / B）
+
+| 情况 | 动作 |
+|------|------|
+| 用户目标已写明公需 / 按年 / 年度学时，且无疑义 | 直接 `site_profile: B`，**不**单独 AskQuestion |
+| 用户目标已写明学科规划 / 双卫式选课 / 申请学分 | 直接 `site_profile: A` |
+| 不明 | **一次** `AskQuestion` 单选 A / B（文案见 `site-profiles.md`） |
+
+### 0.2 定可选能力（按画像分叉）
+
+**B — 公需年度型**
+
+1. 复制 **`templates/api-requirements-b.md`** → `docs/API_REQUIREMENTS.md`，替换 `<PLATFORM>`。
+2. **不要**跑「学科列表 / 注册 / 购卡 / 其他」全量多选。
+3. **仅当** `site-profiles.md` §B 型快速路径「追加提问」表有触发项时，再 `AskQuestion` 补选（通常 0–1 次）。
+4. 复制 `templates/requirements-year-driven.md` → `docs/通用需求说明.md`（可与 0.2 并行）。
+
+**A — 学科规划型**
+
+1. 用 **`AskQuestion` 多选**可选 API 能力（见下文 Suggested prompt）。
+2. 从 **`templates/api-requirements.md`** 生成 `docs/API_REQUIREMENTS.md`，填入 Optional Selected / Not Selected。
+3. 复制 `templates/requirements.md` → `docs/通用需求说明.md`。
+
+Exam / 申请学分：**均不在 AskQuestion 里让用户勾选**——有无由浏览器侦察决定；B 型申请学分默认 **Explicit Skip**（见 B 模板）。
 
 Profile-specific Phase 2 domains:
 
 | Profile | Extra domains beyond login/member/study/exam |
 |---------|-----------------------------------------------|
 | A | `course` catalog + optional `credit`; optional subject list API |
-| B | `course` as **yearly_learning + year_courses + certificate**; `task` or `year_runner`; skip `credit` and subject-list APIs |
+| B | `course` as **yearly_learning + year_courses + certificate**; `task` or `year_runner`; **固定 skip** `credit` and subject-list APIs |
 
 Mandatory capabilities are always in scope:
 
@@ -49,13 +68,19 @@ Optional capabilities must be selected by the user:
 | 购卡 / 充值 | `recharge` | Need card purchase, card binding, recharge, or balance top-up |
 | 其他 | site-specific | User describes extra business flow; create a named domain for it |
 
-Suggested `AskQuestion` prompt:
+Suggested `AskQuestion` prompt（**仅 A 型**；B 型见 Step 0.2，默认跳过本问）：
 
 ```text
 这个站点除了通用学习流程外，还需要实现哪些可选 API 能力？可多选；如果有其他需求，请选「其他」并补充说明。
 ```
 
-After the user answers, write:
+B 型仅在购卡/注册/混合专题触发时，用窄问替代全量多选，例如：
+
+```text
+公需年度型默认不需要学科列表和申请学分。本站点是否需要额外实现：购卡/充值、注册、或其他流程？
+```
+
+After the user answers (**A 型**或 **B 型追加一问**), write or update:
 
 ```markdown
 # API Requirements

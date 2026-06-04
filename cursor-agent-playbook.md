@@ -28,7 +28,7 @@
 | Phase 1 登录侦察 | **`cursor-ide-browser` MCP**（§1.1） | 打开登录页、抓 Network、读 cookie/localStorage |
 | Phase 1 登录侦察 | **`Task` + `subagent_type=explore`** 或 **`.cursor/agents/api-recon`** | 只读梳理页面结构；产出 draft md（须走内置浏览器） |
 | Phase 1 实现 | **`Task` + `subagent_type=generalPurpose`** | 独立实现 `captcha.py` / `login.py`（输入：侦察摘要文件） |
-| Phase 2 需求确认 | **`AskQuestion`** | 多选可选 API 能力，写入 `docs/API_REQUIREMENTS.md` |
+| Phase 2 需求确认 | **`AskQuestion`**（按画像） | **A**：画像 + 可选能力多选；**B**：画像（可推断则免）+ `api-requirements-b.md` 默认，仅购卡/注册/混合时追加 |
 | Phase 2 API 发现 | **`cursor-ide-browser` MCP**（§1.1） | 手动走一遍已确认业务流，抓每个 domain 的请求 |
 | Phase 2 API 发现 | **`Task` + `explore`**（并行） | 每个已确认业务域一份 `docs/api-discovery/<domain>.md` 草稿 |
 | Phase 2 HTTP 对照 | **`shell` skill**（可选） | browser 定稿后用 `curl`/小脚本对照 cookie 与响应 |
@@ -148,7 +148,12 @@ Handoff 模板（固定 8 段，每段 1–5 行，**禁止粘贴大段代码**�
 
 ### Phase 2 按 domain 并行
 
-Phase 2 开始时，父 agent 必须先用 `AskQuestion` 让用户多选可选能力，并将结果写入 `docs/API_REQUIREMENTS.md`。通用能力固定纳入：登录/会话、账号信息、课程列表、课程详情和状态、课程进度上报、课程考试（如果站点存在）、申请学分（如果站点存在）。可选能力包括：学科列表/分类列表、注册、购卡/充值、其他站点特定流程。
+Phase 2 开始时，父 agent 先读 `site-profiles.md` 定 **A/B**：
+
+- **A 型**：`AskQuestion` 多选可选能力 → `templates/api-requirements.md` → `docs/API_REQUIREMENTS.md`。通用 mandatory + 考试/申请（是否存在由侦察定，不提前让用户勾选申请）。
+- **B 型**：复制 `templates/api-requirements-b.md`（默认 Explicit Skips），**不**跑全量多选；`requirements-year-driven.md` → `docs/通用需求说明.md`。仅购卡/注册/混合专题时追加窄问。固定不侦察：`credit`、学科列表 API。
+
+通用 mandatory：登录/会话、账号信息、课程与进度；考试若侦察到则实现。
 
 对每个 confirmed domain（member / course / study / exam-if-present / credit-if-present / selected optional domains）：
 

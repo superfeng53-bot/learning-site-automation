@@ -29,7 +29,7 @@ Read `docs/API_REQUIREMENTS.md` and `<pkg>/API_REFERENCE.md` before writing the 
 
 - Always include the mandatory learning path: account/session, course detail/status, join/enroll when required by the site, and progress reporting.
 - Treat exam as mandatory-if-present. If the site has no exam flow, record `exam_required=False` / `exam_passed=True` with a clear log message such as `site has no exam flow`.
-- Treat credit application as mandatory-if-present. If `docs/API_REQUIREMENTS.md` documents a site credit-application flow, wire `CreditService` and apply-queue assumptions; if the site has no such flow, do not import `CreditService`, leave `credit_applied=False` or `None` based on the project's chosen result schema, and record `skipped: site has no credit application flow`.
+- Treat credit application as mandatory-if-present. If `docs/API_REQUIREMENTS.md` documents a site credit-application flow, wire `CreditService` and apply-queue assumptions; if the site has no such flow, do not import `CreditService`, leave `credit_applied=False` or `None` based on the project's chosen result schema, and record `skipped: site has no credit application flow`. **B 型**默认在 `API_REQUIREMENTS` 的 Explicit Skips 中已排除申请学分，直接走 **Site profile B** 小节，勿实现 `CreditService`。
 
 ## Module: `course_runner.py`
 

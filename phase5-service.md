@@ -19,12 +19,12 @@ Goal: turn the single-account runner into a long-running scheduler that drives m
 
 ## Read First
 
-Read `docs/API_REQUIREMENTS.md` first (note **`site_profile`** in `site-profiles.md`), then read the user-provided requirements doc if any. Otherwise:
+Read `docs/API_REQUIREMENTS.md` first (note **`site_profile`** in `site-profiles.md`). Phase 2 应已写好该文件：**B 型**来自 `templates/api-requirements-b.md`，含默认 Explicit Skips。Then read the user-provided requirements doc if any. If `docs/通用需求说明.md` is missing:
 
 - **A — 学科规划型**：copy `templates/requirements.md` → `docs/通用需求说明.md`
 - **B — 公需年度型**：copy `templates/requirements-year-driven.md` → `docs/通用需求说明.md`
 
-Adapt placeholders (`<PLATFORM>`, `<DOMAIN>`, captcha kind, quotas, selected optional capabilities) to the actual site.
+Adapt placeholders (`<PLATFORM>`, `<DOMAIN>`, captcha kind, quotas, selected optional capabilities) to the actual site. **B 型**：跳过 `scheduling.py`、`apply_worker.py`、`apply_queue` 表与 `waiting_apply`（见 `site-profiles.md` §B 型快速路径）。
 
 Capability-dependent rules:
 
