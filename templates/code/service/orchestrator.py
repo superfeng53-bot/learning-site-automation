@@ -38,6 +38,7 @@ class Orchestrator:
         self._active = 0
         self._lock = threading.Lock()
         self._start_timestamps: list[float] = []
+        self._cancel_events: dict[int, threading.Event] = {}
 
         self._running = False
         self._thread: Optional[threading.Thread] = None
@@ -47,6 +48,18 @@ class Orchestrator:
     @property
     def active_workers(self) -> int:
         return self._active
+
+    def interrupt_account(self, account_id: int) -> None:
+        """重学前中断正在运行的 worker 线程。"""
+        with self._lock:
+            ev = self._cancel_events.get(account_id)
+        if ev:
+            ev.set()
+
+    def is_cancelled(self, account_id: int) -> bool:
+        with self._lock:
+            ev = self._cancel_events.get(account_id)
+        return bool(ev and ev.is_set())
 
     def start(self) -> None:
         self._running = True
@@ -108,8 +121,12 @@ class Orchestrator:
         self._start_timestamps = [t for t in self._start_timestamps if t > cutoff]
 
     def _run_account(self, account: dict) -> None:
+        acc_id = account["id"]
+        cancel_ev = threading.Event()
+        with self._lock:
+            self._cancel_events[acc_id] = cancel_ev
         try:
-            worker = self._worker_factory(account)
+            worker = self._worker_factory(account, cancel_event=cancel_ev)
             worker.run_once()
         except Exception:
             import traceback
@@ -122,4 +139,5 @@ class Orchestrator:
                 pass
         finally:
             with self._lock:
+                self._cancel_events.pop(acc_id, None)
                 self._active -= 1

@@ -39,7 +39,31 @@ EXPORT_EXTRA_COLS = [
     "最近运行结果", "错误日志",
 ]
 
+# B 型导出：登录后字段 + 系统列（excel-spec.md §2B）
+B_EXPORT_EXTRA_COLS = [
+    "姓名", "身份证", "状态", "说明", "重试次数", "创建时间", "更新时间",
+    "最近运行结果", "错误日志",
+]
+
+B_YEAR_HEADER_ALIASES = ("目标年度", "年度", "年份", "target_years")
+B_MODE_HEADER_ALIASES = ("任务模式", "上报模式", "report_mode")
+
 PLATFORM_NAME = "平台"    # TODO: 替换为实际平台名
+
+
+def _current_year_str() -> str:
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    return str(datetime.now(tz=ZoneInfo("Asia/Shanghai")).year)
+
+
+def _resolve_header_col(header: list[str], names: tuple[str, ...]) -> int | None:
+    for name in names:
+        try:
+            return header.index(name)
+        except ValueError:
+            continue
+    return None
 
 
 # ── 样式 ──────────────────────────────────────────────────────────────────────
@@ -62,9 +86,15 @@ def _apply_style(cell, **kwargs):
 
 # ── 模板生成 ──────────────────────────────────────────────────────────────────
 
-def build_template_xlsx(import_cols: list[str] | None = None) -> bytes:
+def build_template_xlsx(
+    import_cols: list[str] | None = None,
+    site_profile: str = "A",
+) -> bytes:
     """生成 {PLATFORM_NAME}账号模板.xlsx，含账号列表 + 填写说明两个 Sheet。"""
-    cols = import_cols or IMPORT_COLS
+    if import_cols is None:
+        cols = B_IMPORT_COLS if site_profile.upper() == "B" else IMPORT_COLS
+    else:
+        cols = import_cols
     wb = openpyxl.Workbook()
 
     # Sheet1：账号列表
@@ -87,15 +117,26 @@ def build_template_xlsx(import_cols: list[str] | None = None) -> bytes:
 
     # Sheet2：填写说明
     ws2 = wb.create_sheet("填写说明")
-    notes = [
-        ("说明", "内容"),
-        ("必填列", "、".join(c for c in cols if c not in ("备注", "卡号", "卡号密码"))),
-        ("密码", "空密码表示导入时不修改密码"),
-        ("学科", "填写平台显示的学科名称，如"内科学""),
-        ("目标年度", "多个年度用逗号分隔，如 2026,2025"),
-        ("重复账号", "重复账号自动跳过，不会覆盖"),
-        ("导入格式", "仅解析"账号列表" Sheet 的中文表头行，其余 Sheet 忽略"),
-    ]
+    if site_profile.upper() == "B":
+        notes = [
+            ("说明", "内容"),
+            ("表头", "不可改字、不可调列顺序"),
+            ("必填列", "账号、密码"),
+            ("目标年度", "可多选，用顿号或逗号分隔；不填则默认当前自然年"),
+            ("任务模式", "标准 或 快速（可选，默认标准）"),
+            ("示例", "zhangsan@example.com / （密码）/ 备注 / 2026,2025 / 标准"),
+            ("重复账号", "重复账号自动跳过，不会覆盖"),
+        ]
+    else:
+        notes = [
+            ("说明", "内容"),
+            ("表头", "不可改字、不可调列顺序"),
+            ("必填列", "账号、密码"),
+            ("学科", "学科与学分成对填写；学分支持 0.5；未启用学科需求可留空"),
+            ("卡号", "仅站点支持购卡/充值时填写"),
+            ("重复账号", "重复账号自动跳过，不会覆盖"),
+            ("导入格式", "仅解析「账号列表」Sheet 的中文表头行"),
+        ]
     ws2.column_dimensions["A"].width = 16
     ws2.column_dimensions["B"].width = 50
     for ri, (k, v) in enumerate(notes, start=1):
@@ -145,7 +186,7 @@ class ImportResult:
     added: int
     skipped: int
     failed: int
-    errors: list[str]
+    errors: list[dict]  # {"row": int, "reason": str}
 
 
 def parse_import_xlsx(data: bytes, site_profile: str = "A") -> ImportResult:
@@ -161,20 +202,21 @@ def parse_import_xlsx(data: bytes, site_profile: str = "A") -> ImportResult:
             ws = wb[sn]
             break
     if ws is None:
-        return ImportResult([], 0, 0, 0, ["未找到账号 Sheet"])
+        return ImportResult([], 0, 0, 1, [{"row": 0, "reason": "未找到账号 Sheet"}])
 
     rows_iter = ws.iter_rows(values_only=True)
     header_row = next(rows_iter, None)
     if not header_row:
-        return ImportResult([], 0, 0, 0, ["Sheet 为空"])
+        return ImportResult([], 0, 0, 1, [{"row": 0, "reason": "Sheet 为空"}])
 
     header = [str(c).strip() if c else "" for c in header_row]
 
-    # 检测是否有英文列名
     english_headers = [h for h in header if h and h.isascii() and h.replace(" ", "").isalpha() and len(h) > 1]
     if len(english_headers) > 3:
-        return ImportResult([], 0, 0, 0,
-                            [f"表头必须为中文，检测到英文列名：{', '.join(english_headers[:5])}"])
+        return ImportResult([], 0, 0, 1, [{
+            "row": 1,
+            "reason": f"表头必须为中文，检测到英文列名：{', '.join(english_headers[:5])}",
+        }])
 
     def col(name: str) -> int | None:
         try:
@@ -183,28 +225,40 @@ def parse_import_xlsx(data: bytes, site_profile: str = "A") -> ImportResult:
             return None
 
     rows: list[ImportRow] = []
-    errors: list[str] = []
+    errors: list[dict] = []
 
     for ri, row in enumerate(rows_iter, start=2):
+        def v_at(idx: int | None, default: str = "") -> str:
+            if idx is None or row[idx] in (None, ""):
+                return default
+            return str(row[idx]).strip()
+
         def v(name: str, default: str = "") -> str:
-            i = col(name)
-            return str(row[i]).strip() if i is not None and row[i] not in (None, "") else default
+            return v_at(col(name), default)
 
         if site_profile == "B":
             username = v("账号")
             if not username:
                 continue
             password = v("密码")
+            if not password:
+                errors.append({"row": ri, "reason": "密码不能为空"})
+                continue
             remark = v("备注")
-            years_raw = v("目标年度")
-            target_years = [y.strip() for y in years_raw.replace("，", ",").split(",") if y.strip()] if years_raw else []
-            report_mode = v("任务模式", "normal")
+            yi = _resolve_header_col(header, B_YEAR_HEADER_ALIASES)
+            years_raw = v_at(yi)
+            target_years = (
+                [y.strip() for y in years_raw.replace("，", ",").replace("、", ",").split(",") if y.strip()]
+                if years_raw else [_current_year_str()]
+            )
+            mi = _resolve_header_col(header, B_MODE_HEADER_ALIASES)
+            report_mode = v_at(mi, "normal")
             if report_mode in ("快速", "fast"):
                 report_mode = "fast"
             else:
                 report_mode = "normal"
             rows.append(ImportRow(
-                display_name=username,
+                display_name="",
                 username=username,
                 password=password,
                 requirements=[],
@@ -217,38 +271,49 @@ def parse_import_xlsx(data: bytes, site_profile: str = "A") -> ImportResult:
             username = v("账号")
             if not username:
                 continue
-            display_name = v("姓名", username)
             password = v("密码")
+            if not password:
+                errors.append({"row": ri, "reason": "密码不能为空"})
+                continue
+            display_name = v("姓名", "")
             remark = v("备注")
             card_no = v("卡号")
             card_pwd = v("卡号密码")
             reqs = []
             for i in range(1, 5):
                 cat = v(f"学科{i}")
-                cr_raw = v(f"学分{i}", "0")
+                cr_raw = v(f"学分{i}", "")
+                if cat and not cr_raw:
+                    errors.append({"row": ri, "reason": f"学科{i} 已填但学分{i} 为空"})
+                    break
+                if cr_raw and not cat:
+                    errors.append({"row": ri, "reason": f"学分{i} 已填但学科{i} 为空"})
+                    break
                 try:
                     cr = float(cr_raw) if cr_raw else 0.0
                 except ValueError:
-                    cr = 0.0
+                    errors.append({"row": ri, "reason": f"学分{i} 不是有效数字"})
+                    break
                 if cat:
                     reqs.append({"category": cat, "credits": cr})
-            extra: dict[str, Any] = {}
-            if card_no:
-                extra["card_no"] = card_no
-            if card_pwd:
-                extra["card_password"] = card_pwd
-            if remark:
-                extra["remark"] = remark
-            rows.append(ImportRow(
-                display_name=display_name,
-                username=username,
-                password=password,
-                requirements=reqs,
-                target_years=[],
-                report_mode="normal",
-                extra=extra,
-                remark=remark,
-            ))
+            else:
+                extra: dict[str, Any] = {}
+                if card_no:
+                    extra["card_no"] = card_no
+                if card_pwd:
+                    extra["card_password"] = card_pwd
+                if remark:
+                    extra["remark"] = remark
+                rows.append(ImportRow(
+                    display_name=display_name or username,
+                    username=username,
+                    password=password,
+                    requirements=reqs,
+                    target_years=[],
+                    report_mode="normal",
+                    extra=extra,
+                    remark=remark,
+                ))
 
     return ImportResult(rows=rows, added=0, skipped=0, failed=len(errors), errors=errors)
 
@@ -261,8 +326,9 @@ def build_export_xlsx(accounts: list[dict], site_profile: str = "A",
     导出：前 N 列与导入模板完全一致；后追加状态/日志等系统列。
     accounts: list of dict（来自 API 层，已脱敏，密码字段为空或已移除）
     """
-    cols = import_cols or (IMPORT_COLS if site_profile == "A" else B_IMPORT_COLS)
-    all_cols = cols + EXPORT_EXTRA_COLS
+    cols = import_cols or (IMPORT_COLS if site_profile.upper() == "A" else B_IMPORT_COLS)
+    extra_cols = EXPORT_EXTRA_COLS if site_profile.upper() == "A" else B_EXPORT_EXTRA_COLS
+    all_cols = cols + extra_cols
 
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -291,13 +357,14 @@ def build_export_xlsx(accounts: list[dict], site_profile: str = "A",
         target_years = json.loads(acc.get("target_years_json") or "[]")
 
         row_data: dict[str, Any] = {
-            "姓名": acc.get("display_name", ""),
+            "姓名": acc.get("display_name", "") or extra.get("real_name", ""),
+            "身份证": extra.get("id_card", ""),
             "账号": acc.get("username", ""),
-            "密码": "",  # 不导出密码
+            "密码": "",
             "备注": extra.get("remark", ""),
             "卡号": extra.get("card_no", ""),
-            "卡号密码": "",  # 不导出卡号密码
-            "目标年度": ",".join(target_years),
+            "卡号密码": "",
+            "目标年度": "、".join(target_years),
             "任务模式": "快速" if extra.get("report_mode") == "fast" else "标准",
             "状态": status_map.get(acc.get("status", ""), acc.get("status", "")),
             "说明": acc.get("status_msg", ""),

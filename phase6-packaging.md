@@ -6,7 +6,7 @@ Goal: make the project trivial for non-developers to use. Double-click → servi
 
 - [ ] `start.sh` (POSIX) and `start.bat` (Windows) create `.venv`, install deps, run `run_service.py` — **一键启动**（双击即可，无需手动 `pip`）
 - [ ] `run_service.py` 满足 phase5「Service Entry」：单实例、**二次启动只打开已有 WebUI**、端口避让、`endpoint.json`
-- [ ] `build.sh` / `build.bat` produce a **single-file** binary in `dist/` with naming `<平台中文名>_<DD>_<MM>` (e.g. `双卫网_27_05.exe`) — **日、月** 两位，构建日当天
+- [ ] `build.sh` / `build.bat` produce a **single-file** binary in `dist/` with naming `<平台中文名>_<MM>_<DD>` (e.g. `双卫网_04_22.exe`) — **月、日** 两位，构建日当天
 - [ ] PyInstaller **onefile**：`ddddocr` ONNX、FastAPI 模板、`uvicorn` hiddenimports 全部打进包；目标机**无需安装 Python** 即可运行
 - [ ] 打包产物 `console=True`：**保留终端窗口**输出 uvicorn/报错（禁止 `console=False` / windowed 无控制台）
 - [ ] 首次运行打包 exe：自动打开浏览器；**再次双击 exe**：只打开已有控制台 URL，不启动第二进程
@@ -79,7 +79,7 @@ def main():
             shutil.rmtree(ROOT / d, ignore_errors=True)
 
     today = datetime.datetime.now()
-    suffix = f"{today.day:02d}_{today.month:02d}"
+    suffix = f"{today.month:02d}_{today.day:02d}"
     binary_name = f"{SITE_NAME}_{suffix}"
 
     spec_template = (ROOT / "scripts" / "shuangwei.spec.template").read_text(encoding="utf-8")
@@ -273,7 +273,7 @@ data/
 
 1. Confirm `./start.sh` works on a clean clone (`rm -rf .venv data/cookies.json && ./start.sh`).
 2. **二次启动**：服务仍在运行时再执行 `./start.sh`（或再双击 exe）→ 仅打开浏览器，任务管理器里仍只有一个服务进程。
-3. Confirm `./build.sh` produces `dist/<平台>_<DD>_<MM>.exe` (or mac binary); filename matches build date.
+3. Confirm `./build.sh` produces `dist/<平台>_<MM>_<DD>.exe` (or mac binary); filename matches build date.
 4. Run the binary from a **different directory** or copy to another machine; confirm `.run/`、`data/` beside the exe and Web UI loads.
 5. Confirm packaged app shows a **console window** with live logs while running.
 6. Confirm CI passes (push to branch, wait for green).
