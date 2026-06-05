@@ -20,7 +20,7 @@
 | `engine/web/app.py`、`excel_io.py` | `<svc>/web/` | **通用，直接用** |
 | `web/index.html` | `<svc>/web/templates/index.html` | **通用模板**，仅替换 `{{PLATFORM}}`/`{{LOGO_LETTER}}` |
 | `adapter.py` | `<svc>/adapter.py` | **通用协议**（接口定义，不要改） |
-| `site_adapter_template.py` | `<pkg>/site_adapter.py` | **站点实现**（每个站点必须填） |
+| `templates/code/pkg/site_adapter_template.py` | `<pkg>/site_adapter.py` | **站点实现**（`build_plan` 已接 `account_pipeline`） |
 | `config_template.py` | `<svc>/config.py` | **站点覆盖**（填 BASE_URL、配额、能力开关、profile） |
 
 站点**自己写**的只有这些（“对接 API”的部分）：

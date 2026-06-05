@@ -72,7 +72,8 @@ class AccountWorkerBase(ABC):
     def run_pipeline(self, account: dict, client) -> PipelineResult:
         """
         A 型：执行登录后全流程（分配/选课 → 日闸门 → 学习 → 考试 → 申请）。
-        可配合 course_planner.check_learning_gates / pick_next_unit。
+        分配：build_assignment_plan() → ai_subject_map + course_results（预匹配，不重跑）。
+        学习：pick_next_learn_course() 或 course_planner.check_learning_gates / pick_next_unit。
         返回 PipelineResult；若学习完成但申请队列有待处理项，设 final_state='waiting_apply'。
         """
         ...

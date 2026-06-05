@@ -224,7 +224,12 @@ templates/code/
 │   ├── runtime.py                  # 单实例锁、端口探测、endpoint.json ── 完整通用，直接复制
 │   ├── config.py                   # DEFAULT/MAX_CONCURRENCY=400、日配额常量
 │   ├── states.py                   # 账号/申请状态机 + UnitState
-│   ├── course_planner.py           # A 型 tier 排序、queue_rank、学习闸门 helper
+│   ├── course_planner.py           # A 型 tier 排序、queue_rank、DP/贪心凑学分、学习闸门
+│   ├── requirements_resolver.py    # 学科1/2 多形态解析（requirements_text / Excel…）
+│   ├── subject_mapper.py           # 逐条 category 映射 → ai_subject_map → 同学科合并
+│   ├── course_matcher.py           # 优先级分桶 + 两阶段凑课 + 精确学分 DP
+│   ├── llm_subject.py              # qwen3.5-flash 单条学科 LLM 映射（DashScope 兼容）
+│   ├── account_pipeline.py         # 完整链路：映射→预匹配→course_results→学习队首
 │   ├── session_retry.py            # is_session_expired + relogin 一次重试
 │   ├── scheduling.py               # 8:00 错峰 daily_eligible_at ── A 型用，B 型可省
 │   ├── store.py                    # SQLite WAL 持久层 + 状态转移校验
@@ -236,6 +241,8 @@ templates/code/
 │       └── excel_io.py             # 导入/导出 ── 按 A/B 型选列
 ├── web/
 │   └── index.html                  # 完整 Web UI（vanilla JS，≤1600 行）── 替换占位符
+├── pkg/
+│   └── site_adapter_template.py    # SiteAdapter 参考实现（build_plan 已接 account_pipeline）
 └── runner/
     ├── course_runner.py            # CourseRunner（A 型）+ YearTaskRunner（B 型）
     └── ...
@@ -248,6 +255,12 @@ templates/code/
 | `config.py` | 复制到 `<svc>/config.py`，改配额与 `SITE_PROFILE` |
 | `states.py` | 直接复制；`store` 已接入转移校验 |
 | `course_planner.py` | A 型分配/学習闸门用；B 型可不复制 |
+| `requirements_resolver.py` | 解析学科1/2+学分；`normalize_requirements()` |
+| `subject_mapper.py` | `ensure_subject_mappings` 逐条映射；`merge_requirements_by_mapped_subject` |
+| `course_matcher.py` | `match_two_phase` + `pick_courses_with_priority`（DP） |
+| `llm_subject.py` | `build_llm_mapper()`；凭证 `templates/ai_config.json` → `.run/ai_config.json` |
+| `account_pipeline.py` | 实现 `CoursePoolProvider.gather_pool`；`build_assignment_plan()` |
+| `pkg/site_adapter_template.py` | 复制为 `<pkg>/site_adapter.py`，实现拉课表/学科列表 TODO |
 | `session_retry.py` | 直接复制；业务 Service 用 `worker.call_with_session_retry()` |
 | `runtime.py` | 直接复制，无需修改 |
 | `scheduling.py` | **A 型**：复制并在 `config.py` 设日窗；**B 型**：不复制 |

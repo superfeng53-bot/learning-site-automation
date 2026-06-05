@@ -430,6 +430,58 @@ class Store:
                 (account_id, day_start_ts),
             ).fetchone()[0]
 
+    # [OPTIONAL:AI学科映射] 未选 LLM 时删除以下方法
+    def get_ai_subject_cache(self, cache_key: str) -> dict[str, Any] | None:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT mapping_json FROM ai_subject_cache WHERE cache_key=?",
+                (cache_key,),
+            ).fetchone()
+            if not row:
+                return None
+            return json.loads(row["mapping_json"])
+
+    def upsert_ai_subject_cache(
+        self,
+        cache_key: str,
+        *,
+        requirement_texts_json: str,
+        catalog_snapshot_json: str,
+        mapping_json: str,
+    ) -> None:
+        now = time.time()
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT INTO ai_subject_cache "
+                "(cache_key, requirement_texts_json, catalog_snapshot_json, mapping_json, "
+                "created_at, updated_at) VALUES (?,?,?,?,?,?) "
+                "ON CONFLICT(cache_key) DO UPDATE SET "
+                "requirement_texts_json=excluded.requirement_texts_json, "
+                "catalog_snapshot_json=excluded.catalog_snapshot_json, "
+                "mapping_json=excluded.mapping_json, updated_at=excluded.updated_at",
+                (
+                    cache_key,
+                    requirement_texts_json,
+                    catalog_snapshot_json,
+                    mapping_json,
+                    now,
+                    now,
+                ),
+            )
+
+    def delete_ai_subject_cache(self, cache_key: str | None = None) -> int:
+        """cache_key=None 时清空整表（运维用）。"""
+        with self._conn() as conn:
+            if cache_key is None:
+                cur = conn.execute("DELETE FROM ai_subject_cache")
+            else:
+                cur = conn.execute(
+                    "DELETE FROM ai_subject_cache WHERE cache_key=?",
+                    (cache_key,),
+                )
+            return cur.rowcount
+    # [END OPTIONAL:AI学科映射]
+
     def ensure_scheduler_defaults(self) -> None:
         if not self.kv_get("scheduler.concurrency_limit", ""):
             self.set_concurrency_limit(DEFAULT_CONCURRENCY)

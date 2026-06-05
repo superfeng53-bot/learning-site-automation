@@ -31,6 +31,7 @@ class ApplyStatus(str, Enum):
 class UnitState:
     """课程单元 state 字段（需求 §3.2）；无独立转移表，由业务写入。"""
     PENDING = ""
+    PREFILL = "pending"   # 预匹配已选中、尚未开始学习
     RUNNING = "running"
     LEARNED = "learned"
     APPLIED = "applied"

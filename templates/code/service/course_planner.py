@@ -22,6 +22,8 @@ def progress_tier_from_state(state: str) -> int:
         return 1
     if s == UnitState.RUNNING:
         return 2
+    if s in (UnitState.PREFILL, "pending"):
+        return 3
     return 3
 
 
@@ -65,10 +67,11 @@ def assign_queue_ranks(units: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def pick_next_unit(units: Iterable[Mapping[str, Any]]) -> dict[str, Any] | None:
-    """在 state 为 '' 或 running 的单元中选 queue_rank 最小的一门。"""
+    """在 state 为 pending/空/running 且 selected 的单元中选 queue_rank 最小的一门。"""
     candidates = [
         dict(u) for u in units
-        if (u.get("state") or "") in ("", UnitState.RUNNING)
+        if u.get("selected", True)
+        and (u.get("state") or "") in (UnitState.PREFILL, UnitState.PENDING, UnitState.RUNNING)
     ]
     if not candidates:
         return None
@@ -133,11 +136,22 @@ def knapsack_by_credits(
     *,
     target_credits: float,
     max_items: int | None = None,
+    use_dp: bool = True,
+    credit_step: float = 0.5,
 ) -> list[dict[str, Any]]:
     """
-    在已排序列表上贪心凑学分（DP 可替换；此处为轻量默认）。
-    已 applied/learned 的单元应已在列表中且 progress_tier 靠前，通常会被保留展示。
+    在已排序列表上凑学分。默认 DP（支持 0.5 步长）；use_dp=False 时退化为贪心。
+    调用方应传入已按 §3.2.1 排序的候选；pinned（applied/learned/running）须在外层先并入结果集。
     """
+    if target_credits <= 0:
+        return []
+    if use_dp:
+        return knapsack_dp_by_credits(
+            ordered_units,
+            target_credits=target_credits,
+            max_items=max_items,
+            credit_step=credit_step,
+        )
     selected: list[dict[str, Any]] = []
     total = 0.0
     for u in ordered_units:
@@ -150,4 +164,84 @@ def knapsack_by_credits(
             break
         selected.append(dict(u))
         total += c
+    return selected
+
+
+def knapsack_dp_by_credits(
+    ordered_units: Sequence[Mapping[str, Any]],
+    *,
+    target_credits: float,
+    max_items: int | None = None,
+    credit_step: float = 0.5,
+) -> list[dict[str, Any]]:
+    """
+    0-1 背包 DP：在有序候选中选子集使学分总和 >= target，门数尽量少。
+    学分按 credit_step 缩放为整数（默认 0.5 → 乘 2）。
+    """
+    if target_credits <= 0 or credit_step <= 0:
+        return []
+
+    scale = max(1, round(1 / credit_step))
+    cap = int(round(target_credits * scale))
+    if cap <= 0:
+        return []
+
+    items: list[tuple[int, dict[str, Any]]] = []
+    for u in ordered_units:
+        w = int(round(float(u.get("credits") or 0) * scale))
+        if w > 0:
+            items.append((w, dict(u)))
+
+    if not items:
+        return []
+    if max_items is not None:
+        max_items = max(1, int(max_items))
+
+    n = len(items)
+    inf = 10**9
+    # dp[i][w] = 达到至少 w 学分所需最少门数（-1 表示不可达）
+    dp: list[list[int]] = [[inf] * (cap + 1) for _ in range(n + 1)]
+    pick: list[list[int]] = [[-1] * (cap + 1) for _ in range(n + 1)]
+    for w in range(cap + 1):
+        dp[0][w] = 0 if w == 0 else inf
+
+    for i in range(1, n + 1):
+        weight, _ = items[i - 1]
+        for w in range(cap + 1):
+            skip = dp[i - 1][w]
+            take = inf
+            if w >= weight:
+                prev = dp[i - 1][w - weight]
+                if prev != inf:
+                    take = prev + 1
+            if take < skip:
+                dp[i][w] = take
+                pick[i][w] = i - 1
+            else:
+                dp[i][w] = skip
+                pick[i][w] = pick[i - 1][w]
+
+    best_w = cap
+    while best_w > 0 and dp[n][best_w] == inf:
+        best_w -= 1
+    if dp[n][best_w] == inf:
+        # 无法精确凑满：贪心兜底取前若干门直至达标
+        return knapsack_by_credits(
+            ordered_units, target_credits=target_credits, max_items=max_items, use_dp=False
+        )
+
+    chosen_idx: list[int] = []
+    i, w = n, best_w
+    while i > 0 and w >= 0:
+        p = pick[i][w]
+        if p == i - 1:
+            chosen_idx.append(p)
+            w -= items[p][0]
+            i -= 1
+        else:
+            i -= 1
+
+    selected = [items[j][1] for j in sorted(chosen_idx)]
+    if max_items is not None and len(selected) > max_items:
+        selected = selected[:max_items]
     return selected
