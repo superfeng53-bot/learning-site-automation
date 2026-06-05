@@ -1,6 +1,9 @@
 """状态机（通用，直接用）。
 
-与 templates/code/service/states.py 保持同步。
+账号主状态、apply_queue 子状态：枚举、合法转移表、守卫函数、中文标签。
+store / worker / apply_worker 经本模块校验转移；运维强制目标（queued / paused）可 bypass。
+
+按能力裁剪：`has_credit=False` 时 `waiting_apply` 不可达。
 """
 from __future__ import annotations
 
@@ -26,12 +29,14 @@ class ApplyStatus(str, Enum):
 
 
 class UnitState:
+    """课程单元 state 字段（需求 §3.2）；无独立转移表，由业务写入。"""
     PENDING = ""
     RUNNING = "running"
     LEARNED = "learned"
     APPLIED = "applied"
     FAILED = "failed"
     SKIPPED = "skipped"
+
     TERMINAL = frozenset({APPLIED, FAILED, SKIPPED})
 
 
@@ -59,7 +64,8 @@ _ACCOUNT_TRANSITIONS: dict[AccountStatus, set[AccountStatus]] = {
     AccountStatus.RUNNING: {
         AccountStatus.COMPLETED, AccountStatus.WAITING_APPLY,
         AccountStatus.RETRYING, AccountStatus.FAILED,
-        AccountStatus.QUEUED, AccountStatus.PAUSED,
+        AccountStatus.QUEUED,
+        AccountStatus.PAUSED,
     },
     AccountStatus.WAITING_APPLY: {
         AccountStatus.COMPLETED, AccountStatus.RUNNING,

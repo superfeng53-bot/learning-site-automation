@@ -27,6 +27,8 @@ from <SVC>.web import excel_io
 
 DEFAULT_PORT = 17865
 SITE_PROFILE = "A"   # TODO: "A" 或 "B"
+HAS_CREDIT_APPLY = False  # TODO: 站点有申请学分流程时 True
+HAS_RECHARGE = False      # TODO: 站点有购卡/充值时 True
 
 
 def main():
@@ -51,6 +53,7 @@ def main():
     # ── 初始化 store / orchestrator ─────────────────────────────────────────
     db_path = root / "data" / "service.db"
     store   = Store(db_path)
+    store.ensure_scheduler_defaults()
     store.startup_recovery()
 
     # [OPTIONAL:申请学分]
@@ -58,17 +61,27 @@ def main():
     apply_worker = None
     # [END OPTIONAL:申请学分]
 
-    def worker_factory(account):
-        return AccountWorker(account, store=store, session_manager=None)  # TODO: 传入真实 sm
+    def worker_factory(account, cancel_event=None):
+        return AccountWorker(
+            account,
+            store=store,
+            session_manager=None,  # TODO: 传入真实 sm
+            site_profile=SITE_PROFILE,
+            cancel_event=cancel_event,
+            has_credit_apply=HAS_CREDIT_APPLY,
+        )
 
     orch = Orchestrator(store, worker_factory=worker_factory, apply_worker=apply_worker)
     orch.start()
 
     # ── 注入到 FastAPI app.state ─────────────────────────────────────────────
-    app.state.store       = store
-    app.state.orch        = orch
-    app.state.excel_io    = excel_io
-    app.state.site_profile = SITE_PROFILE
+    app.state.store            = store
+    app.state.orch             = orch
+    app.state.excel_io         = excel_io
+    app.state.site_profile     = SITE_PROFILE
+    app.state.has_credit_apply = HAS_CREDIT_APPLY
+    app.state.has_recharge     = HAS_RECHARGE
+    app.state.recharge_handler = None  # TODO: callable(acc_dict, card_no, card_pwd) -> dict
 
     # ── 端口 & 元数据 ─────────────────────────────────────────────────────────
     port = find_available_port(args.host, args.port)

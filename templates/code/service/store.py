@@ -12,6 +12,9 @@ import time
 from pathlib import Path
 from typing import Optional
 
+from .config import DEFAULT_CONCURRENCY, MAX_CONCURRENCY, MIN_CONCURRENCY
+from .states import assert_account_transition, assert_apply_transition, is_force_target
+
 # ── Schema ────────────────────────────────────────────────────────────────────
 
 _SCHEMA = """
@@ -109,12 +112,22 @@ class Store:
         """服务启动时调用：把上次未正常结束的 running 账号重新入队。"""
         now = time.time()
         with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT id, status FROM accounts WHERE status='running'",
+            ).fetchall()
+            for row in rows:
+                assert_account_transition(row["status"], "queued", force=True)
             conn.execute(
                 "UPDATE accounts SET status='queued', status_msg='startup recovery', "
                 "updated_at=? WHERE status='running'",
                 (now,),
             )
             # [OPTIONAL:申请学分]
+            inflight = conn.execute(
+                "SELECT id, status FROM apply_queue WHERE status='in_flight'",
+            ).fetchall()
+            for row in inflight:
+                assert_apply_transition(row["status"], "pending")
             conn.execute("UPDATE apply_queue SET status='pending' WHERE status='in_flight'")
             # [END OPTIONAL:申请学分]
 
@@ -146,7 +159,8 @@ class Store:
             return dict(row) if row else None
 
     def list_accounts(self, status: str = "", search: str = "",
-                      limit: int = 200, offset: int = 0) -> list[dict]:
+                      limit: int = 200, offset: int = 0,
+                      date_from: float = 0, date_to: float = 0) -> list[dict]:
         sql = "SELECT * FROM accounts WHERE 1=1"
         params: list = []
         if status:
@@ -155,6 +169,12 @@ class Store:
         if search:
             sql += " AND (display_name LIKE ? OR username LIKE ? OR status_msg LIKE ?)"
             params.extend([f"%{search}%"] * 3)
+        if date_from > 0:
+            sql += " AND updated_at >= ?"
+            params.append(date_from)
+        if date_to > 0:
+            sql += " AND updated_at <= ?"
+            params.append(date_to)
         sql += " ORDER BY id ASC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
         with self._conn() as conn:
@@ -182,7 +202,13 @@ class Store:
             )
 
     def update_account_status(self, account_id: int, status: str,
-                              status_msg: str = "", retry_delta: int = 0) -> None:
+                              status_msg: str = "", retry_delta: int = 0,
+                              *, force: bool = False) -> None:
+        account = self.get_account(account_id)
+        if account:
+            frm = account.get("status") or ""
+            if frm != status and not (force or is_force_target(status)):
+                assert_account_transition(frm, status)
         now = time.time()
         with self._conn() as conn:
             if retry_delta:
@@ -221,11 +247,14 @@ class Store:
             ).fetchone()
             if not row:
                 return None
-            conn.execute(
+            cur = conn.execute(
                 "UPDATE accounts SET status='running', updated_at=? WHERE id=? AND status IN ('queued','retrying')",
                 (now, row["id"]),
             )
-            return dict(row)
+            if cur.rowcount == 0:
+                return None
+            updated = conn.execute("SELECT * FROM accounts WHERE id=?", (row["id"],)).fetchone()
+            return dict(updated) if updated else dict(row)
 
     # ── Requeue (重学) ────────────────────────────────────────────────────────
 
@@ -252,6 +281,10 @@ class Store:
         # 明确清除
         for key in ("phase", "failed_phase", "error_log_text"):
             new_extra.pop(key, None)
+
+        frm = account.get("status") or ""
+        if frm != "queued":
+            assert_account_transition(frm, "queued", force=True)
 
         with self._conn() as conn:
             conn.execute(
@@ -313,8 +346,10 @@ class Store:
             ).fetchone()
             if not row:
                 return None
+            assert_apply_transition(row["status"], "in_flight")
             conn.execute(
-                "UPDATE apply_queue SET status='in_flight' WHERE id=?", (row["id"],)
+                "UPDATE apply_queue SET status='in_flight' WHERE id=? AND status='pending'",
+                (row["id"],),
             )
             return dict(row)
 
@@ -328,6 +363,11 @@ class Store:
         else:
             status = "pending"
         with self._conn() as conn:
+            row = conn.execute(
+                "SELECT status FROM apply_queue WHERE id=?", (apply_id,),
+            ).fetchone()
+            if row:
+                assert_apply_transition(row["status"], status)
             conn.execute(
                 "UPDATE apply_queue SET status=?,attempts=attempts+1,last_error=?,"
                 "next_attempt_at=? WHERE id=?",
@@ -340,6 +380,24 @@ class Store:
                 "SELECT COUNT(*) FROM apply_queue WHERE account_id=? AND status IN ('pending','in_flight')",
                 (account_id,),
             ).fetchone()[0]
+
+    def list_apply_tasks(self, account_id: int) -> list[dict]:
+        with self._conn() as conn:
+            return [
+                dict(r) for r in conn.execute(
+                    "SELECT * FROM apply_queue WHERE account_id=? ORDER BY id ASC",
+                    (account_id,),
+                ).fetchall()
+            ]
+
+    def latest_apply_error(self, account_id: int) -> str:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT last_error FROM apply_queue WHERE account_id=? AND last_error != '' "
+                "ORDER BY id DESC LIMIT 1",
+                (account_id,),
+            ).fetchone()
+            return row["last_error"] if row else ""
 
     # [END OPTIONAL:申请学分]
 
@@ -363,8 +421,25 @@ class Store:
     def set_paused(self, paused: bool) -> None:
         self.kv_set("scheduler.paused", "1" if paused else "0")
 
+    def count_apply_success_today(self, account_id: int, *, day_start_ts: float) -> int:
+        """今日 credit_applications 成功次数（A 型日申请配额）。"""
+        with self._conn() as conn:
+            return conn.execute(
+                "SELECT COUNT(*) FROM credit_applications "
+                "WHERE account_id=? AND success=1 AND applied_at>=?",
+                (account_id, day_start_ts),
+            ).fetchone()[0]
+
+    def ensure_scheduler_defaults(self) -> None:
+        if not self.kv_get("scheduler.concurrency_limit", ""):
+            self.set_concurrency_limit(DEFAULT_CONCURRENCY)
+
     def get_concurrency_limit(self) -> int:
-        return int(self.kv_get("scheduler.concurrency_limit", "3"))
+        raw = self.kv_get("scheduler.concurrency_limit", "")
+        if not raw:
+            return DEFAULT_CONCURRENCY
+        return int(raw)
 
     def set_concurrency_limit(self, limit: int) -> None:
-        self.kv_set("scheduler.concurrency_limit", str(max(1, min(50, limit))))
+        clamped = max(MIN_CONCURRENCY, min(MAX_CONCURRENCY, int(limit)))
+        self.kv_set("scheduler.concurrency_limit", str(clamped))

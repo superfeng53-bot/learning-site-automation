@@ -45,7 +45,9 @@ DB_PATH = RUN_DIR / "__DB_NAME__"
 # ---- 调度（通用） ----
 TICK_SECONDS = 3                 # orchestrator tick 间隔
 TICK_STARTS_PER_SECOND = 10      # 1s 滚动窗口内最多新拉起的 worker 数
-DEFAULT_CONCURRENCY = 10         # 默认并发账号数（UI 可调）
+DEFAULT_CONCURRENCY = 400        # 默认并发账号数（UI 可调，上限见 MAX_CONCURRENCY）
+MAX_CONCURRENCY = 400
+MIN_CONCURRENCY = 1
 RETRY_DELAY_SEC = 60             # 瞬时失败重试延迟
 MAX_RETRY = 5                    # 超过则 failed
 

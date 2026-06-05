@@ -198,7 +198,7 @@ code { font-family: var(--font-mono); font-size: 12px;
 
 **调度状态徽章**：见 §6.2 Pill，`data-tone="running|paused"`。
 
-**并发 input**：`<input type="number" min=1 max=50>`，宽 56px，前置文案「并发」（13px muted），两者用 `display:flex align-items:center gap:6px` 包在一个 `.ctrl-group` 里，group 右侧有 1px border-right 分隔线。
+**并发 input**：`<input type="number" min=1 max=400>`，宽 56px，默认 `400`，前置文案「并发」（13px muted），两者用 `display:flex align-items:center gap:6px` 包在一个 `.ctrl-group` 里，group 右侧有 1px border-right 分隔线。与 `templates/requirements.md` §8 及 `<svc>/config.py` 的 `MAX_CONCURRENCY` 一致。
 
 **图标按钮**（主题切换）：32px 圆形，`var(--c-surface-2)` 背景，hover 时 `var(--c-border-strong)` 背景。主题图标：日/夜/系统三状切换，SVG 路径固定。
 
@@ -624,6 +624,12 @@ Tabs 根据 `docs/API_REQUIREMENTS.md` 生成：基础为 `基本信息 / 课程
 - 降级：`clipboard` 不可用时选中隐藏 `<textarea>` + `execCommand('copy')`
 - **禁止**复制密码/cookie；日志内容由后端脱敏
 
+### 6.18 购卡 / 充值（`has_recharge` 时）
+
+- 位置：**详情抽屉**「基本信息」Tab 末尾（操作列仍仅三按钮 §6.7）。
+- 表单项：卡号、卡号密码；按钮「提交购卡」→ `POST /api/accounts/{id}/recharge`。
+- 须 `ui.confirm`；成功/失败 toast。
+
 ---
 
 ## 7. 布局与响应式
@@ -653,8 +659,9 @@ Tabs 根据 `docs/API_REQUIREMENTS.md` 生成：基础为 `基本信息 / 课程
 10. **删除**：必须经 `ui.confirm`，`okTone:"danger"`，body 写明将永久删除该账号及全部运行数据（含 cookies、课表、运行记录）。
 11. **重学 / 编辑重学**：须 `ui.confirm`（`okTone:"primary"`），body 说明将清除登录后产生的运行数据但**保留 cookies 等登录指纹**（重学）或**先保存表单再同等清除**（编辑重学）。若账号 `status === 'running'`，confirm 额外提示「将中断当前任务」。
 12. **编辑重学模态**：字段与 §6.5 添加表单一致（含密码；空密码表示不修改）；主按钮文案「保存并重学」；取消不发请求。
-13. **数字输入**：并发 `min=1 max=50 step=1`；学分 `min=0 step=0.5`。
-14. **空态切换**：初次加载 → skeleton；数据到达 → 渐变 opacity `0→1`（200ms）；无数据 → empty-state。
+13. **数字输入**：并发 `min=1 max=400 step=1`；学分 `min=0 step=0.5`。
+14. **日期筛选**：列表 toolbar 提供 `date_from` / `date_to`（`<input type="date">`），映射到 `GET /api/accounts?date_from=&date_to=`（Unix 秒，按创建时间 `created_at` 过滤）。
+15. **空态切换**：初次加载 → skeleton；数据到达 → 渐变 opacity `0→1`（200ms）；无数据 → empty-state。
 
 ---
 
@@ -689,6 +696,7 @@ Tabs 根据 `docs/API_REQUIREMENTS.md` 生成：基础为 `基本信息 / 课程
 | POST | `/api/scheduler/limit` | `{ limit:int }` | `{ ok: true, limit }` |
 | POST | `/api/scheduler/pause` | — | `{ ok: true, paused: true }` |
 | POST | `/api/scheduler/resume` | — | `{ ok: true, paused: false }` |
+| POST | `/api/accounts/{id}/recharge` | `{ card_no, card_password? }`（仅 `has_recharge`） | `{ ok, message? }` |
 | GET | `/api/template` | — | xlsx 二进制 |
 | GET | `/api/export` | — | xlsx 二进制 |
 

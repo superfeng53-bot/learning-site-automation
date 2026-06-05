@@ -145,6 +145,12 @@ tbody td{padding:12px 14px;font-size:13.5px;vertical-align:middle}
 .td-name:hover{text-decoration:underline}
 .td-user{width:140px;font-family:var(--font-mono);font-size:12.5px}
 .td-subjects{max-width:200px}
+.td-years{max-width:160px}
+.td-progress{width:100px}
+.progress-bar{height:6px;background:var(--c-surface-2);border-radius:var(--r-pill);overflow:hidden;margin-top:4px}
+.progress-bar span{display:block;height:100%;background:var(--c-primary);border-radius:var(--r-pill)}
+.year-group{margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--c-border)}
+.year-group h3{font-size:13px;margin-bottom:8px;color:var(--c-text-soft)}
 .td-status{width:120px}
 .td-msg{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px;color:var(--c-text-soft);font-size:13px}
 .td-actions{width:220px}
@@ -256,7 +262,7 @@ details pre{margin-top:6px;font-size:11.5px;font-family:var(--font-mono);backgro
   <div class="header-spacer"></div>
   <div class="ctrl-group">
     <span class="concurrency-label">并发</span>
-    <input class="concurrency-input" id="concurrencyInput" type="number" min="1" max="50" value="3" title="最大并发账号数">
+    <input class="concurrency-input" id="concurrencyInput" type="number" min="1" max="400" value="400" title="最大并发账号数（1–400）">
   </div>
   <div class="header-actions">
     <button class="btn btn-outline btn-sm" id="btnPause" title="暂停调度">
@@ -333,8 +339,7 @@ details pre{margin-top:6px;font-size:11.5px;font-family:var(--font-mono);backgro
     </div>
     <div class="panel-body">
       <form id="addForm" onsubmit="submitAddForm(event)">
-        <!-- ══ A 型字段（默认）；B 型：删除 A 型块，取消注释下方 [B型] 块 ══ -->
-        <div class="form-grid">
+        <div class="form-grid" id="addFormA">
           <div class="field">
             <label class="field-label" for="fName">姓名 <span class="req">*</span></label>
             <input class="input" id="fName" type="text" placeholder="真实姓名" autocomplete="off">
@@ -380,22 +385,21 @@ details pre{margin-top:6px;font-size:11.5px;font-family:var(--font-mono);backgro
             <input class="input" id="fRemark" type="text" placeholder="可选备注">
           </div>
         </div>
-        <!-- ══ [OPTIONAL:B型] 公需年度型添加面板 — 删除上方 A型 form-grid 块，取消本块注释 ══
-        <div class="form-grid">
+        <div class="form-grid" id="addFormB" style="display:none">
           <div class="field">
-            <label class="field-label" for="fUser">账号 <span class="req">*</span></label>
-            <input class="input" id="fUser" type="text" placeholder="登录账号" autocomplete="off">
+            <label class="field-label" for="fUserB">账号 <span class="req">*</span></label>
+            <input class="input" id="fUserB" type="text" placeholder="登录账号" autocomplete="off">
           </div>
           <div class="field">
-            <label class="field-label" for="fPass">密码 <span class="req">*</span></label>
-            <input class="input" id="fPass" type="password" placeholder="登录密码" autocomplete="off">
+            <label class="field-label" for="fPassB">密码 <span class="req">*</span></label>
+            <input class="input" id="fPassB" type="password" placeholder="登录密码" autocomplete="off">
           </div>
           <div class="field">
-            <label class="field-label" for="fRemark">备注</label>
-            <input class="input" id="fRemark" type="text" placeholder="可选备注">
+            <label class="field-label" for="fRemarkB">备注</label>
+            <input class="input" id="fRemarkB" type="text" placeholder="可选备注">
           </div>
           <div class="field" style="grid-column:1/-1">
-            <label class="field-label">目标年度 <span class="req">*</span><span style="font-weight:400;color:var(--c-text-muted);font-size:12px;margin-left:6px">至少选一年</span></label>
+            <label class="field-label">目标年度 <span class="req">*</span><span style="font-weight:400;color:var(--c-text-muted);font-size:12px;margin-left:6px">至少选一年；姓名登录后自动获取</span></label>
             <div class="year-pills" id="yearPills"></div>
           </div>
           <div class="field" style="grid-column:1/-1">
@@ -406,14 +410,13 @@ details pre{margin-top:6px;font-size:11.5px;font-family:var(--font-mono);backgro
             </div>
           </div>
         </div>
-        [END OPTIONAL:B型] ══ -->
         <!-- Excel 上传 -->
         <div class="upload-zone" id="uploadZone" style="margin-top:14px"
              onclick="document.getElementById('fileInput').click()"
              ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropFile(event)">
           <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="var(--c-text-muted)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
           <p>拖拽 Excel 到此处，或点击选择文件</p>
-          <p style="font-size:12px;margin-top:2px">仅支持 .xlsx；表头须为中文（姓名/账号/密码…）</p>
+          <p style="font-size:12px;margin-top:2px" id="uploadHint">仅支持 .xlsx；表头须为中文（姓名/账号/密码…）</p>
           <input type="file" id="fileInput" accept=".xlsx" style="display:none" onchange="uploadFile(this.files[0])">
         </div>
         <div class="form-actions">
@@ -446,8 +449,12 @@ details pre{margin-top:6px;font-size:11.5px;font-family:var(--font-mono);backgro
           <button aria-pressed="false" data-val="queued" onclick="setFilter(this)">排队</button>
           <button aria-pressed="false" data-val="running" onclick="setFilter(this)">进行中</button>
           <button aria-pressed="false" data-val="completed" onclick="setFilter(this)">已完成</button>
+          <button aria-pressed="false" data-val="retrying" onclick="setFilter(this)">重试</button>
           <button aria-pressed="false" data-val="failed" onclick="setFilter(this)">失败</button>
+          <button aria-pressed="false" data-val="waiting_apply" id="filterWaitApply" onclick="setFilter(this)" style="display:none">等待申请</button>
         </div>
+        <input class="input" id="dateFrom" type="date" title="创建时间起" onchange="refresh()" style="width:132px;padding:6px 8px;font-size:12px">
+        <input class="input" id="dateTo" type="date" title="创建时间止" onchange="refresh()" style="width:132px;padding:6px 8px;font-size:12px">
         <span class="toolbar-count" id="toolbarCount">共 0 条</span>
       </div>
       <!-- Skeleton -->
@@ -460,7 +467,7 @@ details pre{margin-top:6px;font-size:11.5px;font-family:var(--font-mono);backgro
       <div class="table-wrap" id="tableWrap" style="display:none;opacity:0;transition:opacity .2s">
         <table>
           <thead>
-            <tr>
+            <tr id="tableHeadRow">
               <th class="td-name">姓名</th>
               <th class="td-user">账号</th>
               <th class="td-subjects">学科·学分</th>
@@ -500,10 +507,12 @@ details pre{margin-top:6px;font-size:11.5px;font-family:var(--font-mono);backgro
 (function(){
 
 // ── State ───────────────────────────────────────────────────────────────────
-let _accounts=[], _filter='', _search='', _paused=false, _concurrency=3;
+let _accounts=[], _filter='', _search='', _paused=false, _concurrency=400;
 let _inflight=false, _pollTimer=null;
+let _config={site_profile:'A',has_credit_apply:false,has_subjects:true,has_recharge:false};
 const STATUS_LABEL={queued:'排队',running:'进行中',waiting_apply:'等待申请',
   retrying:'重试',completed:'已完成',failed:'失败',paused:'已暂停'};
+const isB=()=>_config.site_profile==='B';
 
 // ── API ─────────────────────────────────────────────────────────────────────
 async function api(method,path,body){
@@ -537,10 +546,14 @@ async function refresh(){
     const params=new URLSearchParams({limit:'500'});
     if(_filter) params.set('status',_filter);
     if(_search) params.set('search',_search);
+    const df=document.getElementById('dateFrom')?.value;
+    const dt=document.getElementById('dateTo')?.value;
+    if(df) params.set('date_from', String(Math.floor(new Date(df+'T00:00:00').getTime()/1000)));
+    if(dt) params.set('date_to', String(Math.floor(new Date(dt+'T23:59:59').getTime()/1000)));
     const data=await apiFetch('/api/accounts?'+params);
     _accounts=data.items||[];
     _paused=data.paused||false;
-    _concurrency=data.concurrency_limit||3;
+    _concurrency=data.concurrency_limit||400;
     updateStats(data);
     renderList();
     updateHeader();
@@ -577,7 +590,7 @@ function updateStats(data){
   countUp('tCompleted',c.completed||0);
   countUp('tFailed',c.failed||0);
   countUp('tWorkers',data.active_workers||0);
-  document.getElementById('concurrencyInput').value=data.concurrency_limit||3;
+  document.getElementById('concurrencyInput').value=data.concurrency_limit||400;
 }
 
 // ── Header ───────────────────────────────────────────────────────────────────
@@ -633,29 +646,66 @@ function subjectTags(a){
   }catch{return '—';}
 }
 
+function yearSummary(a){
+  try{
+    const years=JSON.parse(a.target_years_json||'[]');
+    return years.length?years.join('、'):'—';
+  }catch{return '—';}
+}
+
+function progressPercent(a){
+  try{
+    const extra=JSON.parse(a.extra_json||'{}');
+    const ys=extra.year_status||{};
+    const vals=Object.values(ys);
+    if(!vals.length) return extra.progress_percent||0;
+    const pcts=vals.map(y=>y.progress_percent!=null?y.progress_percent:
+      (y.required_hours>0?Math.round(100*y.earned_hours/y.required_hours):0));
+    return Math.min(...pcts);
+  }catch{return 0;}
+}
+
 function rowHtml(a){
   const cls=a.status==='failed'?'is-failed':'';
+  const acts=`<div class="actions-group">
+      <button class="btn btn-ghost btn-sm" onclick="requeueAccount(${a.id})">重学</button>
+      <button class="btn btn-outline btn-sm" onclick="editRequeue(${a.id})">编辑重学</button>
+      <button class="btn btn-icon btn-ghost" onclick="deleteAccount(${a.id})" title="删除" style="color:var(--c-text-muted);transition:color var(--dur-fast);" onmouseenter="this.style.color='var(--c-danger)'" onmouseleave="this.style.color='var(--c-text-muted)'">
+        <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,4 14,4"/><path d="M5 4V2h6v2M6 7v5M10 7v5"/><rect x="3" y="4" width="10" height="10" rx="1"/></svg>
+      </button>
+    </div>`;
+  if(isB()){
+    const extra=JSON.parse(a.extra_json||'{}');
+    const pct=progressPercent(a);
+    const name=a.display_name||extra.real_name||'（待获取）';
+    return `<tr class="${cls}">
+      <td class="td-user" onclick="openDrawer(${a.id})" style="font-weight:600;cursor:pointer;color:var(--c-primary)">${esc(a.username)}</td>
+      <td class="td-msg">${esc(extra.remark||'—')}</td>
+      <td class="td-years">${esc(yearSummary(a))}</td>
+      <td class="td-status">${pillHtml(a.status)}</td>
+      <td class="td-progress" title="${esc(a.status_msg||'')}"><span style="font-size:12px;color:var(--c-text-muted)">${pct}%</span><div class="progress-bar"><span style="width:${pct}%"></span></div></td>
+      <td class="td-actions">${acts}</td>
+    </tr>`;
+  }
   return `<tr class="${cls}">
     <td class="td-name" onclick="openDrawer(${a.id})">${esc(a.display_name||a.username)}</td>
     <td class="td-user">${esc(a.username)}</td>
     <td class="td-subjects"><div class="tags">${subjectTags(a)}</div></td>
     <td class="td-status">${pillHtml(a.status)}</td>
     <td class="td-msg" title="${esc(a.status_msg||'')}">${esc(a.status_msg||'—')}</td>
-    <td class="td-actions"><div class="actions-group">
-      <button class="btn btn-ghost btn-sm" onclick="requeueAccount(${a.id})">重学</button>
-      <button class="btn btn-outline btn-sm" onclick="editRequeue(${a.id})">编辑重学</button>
-      <button class="btn btn-icon btn-ghost" onclick="deleteAccount(${a.id})" title="删除" style="color:var(--c-text-muted);transition:color var(--dur-fast);" onmouseenter="this.style.color='var(--c-danger)'" onmouseleave="this.style.color='var(--c-text-muted)'">
-        <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,4 14,4"/><path d="M5 4V2h6v2M6 7v5M10 7v5"/><rect x="3" y="4" width="10" height="10" rx="1"/></svg>
-      </button>
-    </div></td>
+    <td class="td-actions">${acts}</td>
   </tr>`;
 }
 
 function cardHtml(a){
+  const extra=JSON.parse(a.extra_json||'{}');
+  const name=isB()?(a.display_name||extra.real_name||a.username):(a.display_name||a.username);
+  const sub=isB()?`目标年度：${yearSummary(a)} · 进度 ${progressPercent(a)}%`:a.username;
+  const tags=isB()?'':`<div class="tags">${subjectTags(a)}</div>`;
   return `<div class="mobile-card">
-    <div class="mc-top"><span class="mc-name" onclick="openDrawer(${a.id})">${esc(a.display_name||a.username)}</span>${pillHtml(a.status)}</div>
-    <div class="mc-user">${esc(a.username)}</div>
-    <div class="tags">${subjectTags(a)}</div>
+    <div class="mc-top"><span class="mc-name" onclick="openDrawer(${a.id})">${esc(name)}</span>${pillHtml(a.status)}</div>
+    <div class="mc-user">${esc(sub)}</div>
+    ${tags}
     ${a.status_msg?`<div class="mc-msg">${esc(a.status_msg)}</div>`:''}
     <div class="mc-actions">
       <button class="btn btn-ghost btn-sm" onclick="requeueAccount(${a.id})">重学</button>
@@ -665,6 +715,26 @@ function cardHtml(a){
       </button>
     </div>
   </div>`;
+}
+
+function applyLayout(){
+  const b=isB();
+  document.getElementById('addFormA').style.display=b?'none':'';
+  document.getElementById('addFormB').style.display=b?'':'none';
+  document.getElementById('uploadHint').textContent=b
+    ?'仅支持 .xlsx；表头须为中文（账号/密码/目标年度…）'
+    :'仅支持 .xlsx；表头须为中文（姓名/账号/密码…）';
+  const waitTile=document.getElementById('tileWaitApply');
+  const waitFilter=document.getElementById('filterWaitApply');
+  const showWait=!!_config.has_credit_apply;
+  if(waitTile) waitTile.style.display=showWait?'':'none';
+  if(waitFilter) waitFilter.style.display=showWait?'':'none';
+  const head=document.getElementById('tableHeadRow');
+  if(head){
+    head.innerHTML=b
+      ?'<th class="td-user">账号</th><th class="td-msg">备注</th><th class="td-years">目标年度</th><th class="td-status">状态</th><th class="td-progress">进度</th><th class="td-actions">操作</th>'
+      :'<th class="td-name">姓名</th><th class="td-user">账号</th><th class="td-subjects">学科·学分</th><th class="td-status">状态</th><th class="td-msg">说明</th><th class="td-actions">操作</th>';
+  }
 }
 
 function pillHtml(status){
@@ -693,34 +763,6 @@ function togglePanel(id){
 }
 
 // ── Add Form ─────────────────────────────────────────────────────────────────
-// A 型提交逻辑（默认）
-async function submitAddForm(e){
-  e.preventDefault();
-  const name=v('fName'),user=v('fUser'),pass=v('fPass');
-  if(!user||!pass){window.ui.toast('账号和密码为必填','warning');return;}
-  const reqs=[];
-  const s1=v('fSubject1'),c1=parseFloat(v('fCredit1')||'0');
-  const s2=v('fSubject2'),c2=parseFloat(v('fCredit2')||'0');
-  if(s1) reqs.push({category:s1,credits:c1});
-  if(s2) reqs.push({category:s2,credits:c2});
-  const extra={};
-  if(v('fCard')) extra.card_no=v('fCard');
-  if(v('fCardPwd')) extra.card_password=v('fCardPwd');
-  if(v('fRemark')) extra.remark=v('fRemark');
-  const btn=document.getElementById('btnAdd');
-  btn.setAttribute('aria-busy','true');
-  try{
-    await api('POST','/api/accounts',{display_name:name||user,username:user,password:pass,requirements:reqs,extra});
-    document.getElementById('addForm').reset();
-    document.getElementById('fName').focus();
-    window.ui.toast('账号已添加','success',2500);
-    await refresh();
-  }catch(err){window.ui.toast(err.message,'danger');}
-  finally{btn.removeAttribute('aria-busy');}
-}
-function v(id){return (document.getElementById(id)||{}).value||'';}
-
-/* ══ [OPTIONAL:B型] 公需年度型表单逻辑 — 替换上方 submitAddForm，并在 DOMContentLoaded 中调用 initYearPills() ══
 function recentFiveYears(){
   const y=new Date().getFullYear();
   return [0,1,2,3,4].map(i=>String(y-i));
@@ -728,6 +770,7 @@ function recentFiveYears(){
 function initYearPills(){
   const wrap=document.getElementById('yearPills');
   if(!wrap) return;
+  wrap.innerHTML='';
   const curY=String(new Date().getFullYear());
   recentFiveYears().forEach(yr=>{
     const lbl=document.createElement('label');
@@ -740,28 +783,49 @@ function selectMode(btn){
   btn.closest('[role=radiogroup]').querySelectorAll('button').forEach(b=>{b.setAttribute('aria-pressed','false');});
   btn.setAttribute('aria-pressed','true');
 }
+function focusAddField(){
+  if(isB()) document.getElementById('fUserB')?.focus();
+  else document.getElementById('fName')?.focus();
+}
 async function submitAddForm(e){
   e.preventDefault();
-  const user=v('fUser'),pass=v('fPass');
-  if(!user||!pass){window.ui.toast('账号和密码为必填','warning');return;}
-  const years=[...document.querySelectorAll('#yearPills input:checked')].map(i=>i.value);
-  if(!years.length){window.ui.toast('请至少选择一个目标年度','warning');return;}
-  const mode=document.querySelector('#modeGroup [aria-pressed="true"]')?.dataset.val||'normal';
-  const extra={};
-  if(v('fRemark')) extra.remark=v('fRemark');
   const btn=document.getElementById('btnAdd');
   btn.setAttribute('aria-busy','true');
   try{
-    await api('POST','/api/accounts',{username:user,password:pass,target_years:years,report_mode:mode,extra});
-    document.getElementById('addForm').reset();
-    initYearPills();
-    document.getElementById('fUser').focus();
+    if(isB()){
+      const user=v('fUserB'),pass=v('fPassB');
+      if(!user||!pass){window.ui.toast('账号和密码为必填','warning');return;}
+      const years=[...document.querySelectorAll('#yearPills input:checked')].map(i=>i.value);
+      if(!years.length){window.ui.toast('请至少选择一个目标年度','warning');return;}
+      const mode=document.querySelector('#modeGroup [aria-pressed="true"]')?.dataset.val||'normal';
+      const extra={};
+      if(v('fRemarkB')) extra.remark=v('fRemarkB');
+      await api('POST','/api/accounts',{username:user,password:pass,target_years:years,report_mode:mode,extra});
+      document.getElementById('addForm').reset();
+      initYearPills();
+      document.getElementById('fUserB').focus();
+    }else{
+      const name=v('fName'),user=v('fUser'),pass=v('fPass');
+      if(!user||!pass){window.ui.toast('账号和密码为必填','warning');return;}
+      const reqs=[];
+      const s1=v('fSubject1'),c1=parseFloat(v('fCredit1')||'0');
+      const s2=v('fSubject2'),c2=parseFloat(v('fCredit2')||'0');
+      if(s1) reqs.push({category:s1,credits:c1});
+      if(s2) reqs.push({category:s2,credits:c2});
+      const extra={};
+      if(_config.has_recharge&&v('fCard')) extra.card_no=v('fCard');
+      if(_config.has_recharge&&v('fCardPwd')) extra.card_password=v('fCardPwd');
+      if(v('fRemark')) extra.remark=v('fRemark');
+      await api('POST','/api/accounts',{display_name:name||user,username:user,password:pass,requirements:reqs,extra});
+      document.getElementById('addForm').reset();
+      document.getElementById('fName').focus();
+    }
     window.ui.toast('账号已添加','success',2500);
     await refresh();
   }catch(err){window.ui.toast(err.message,'danger');}
   finally{btn.removeAttribute('aria-busy');}
 }
-[END OPTIONAL:B型] ══ */
+function v(id){return (document.getElementById(id)||{}).value||'';}
 
 // ── Upload ───────────────────────────────────────────────────────────────────
 function dragOver(e){e.preventDefault();document.getElementById('uploadZone').classList.add('drag-over');}
@@ -795,38 +859,61 @@ async function editRequeue(id){
   const a=_accounts.find(x=>x.id===id); if(!a) return;
   const extra=JSON.parse(a.extra_json||'{}');
   const reqs=JSON.parse(a.requirements_json||'[]');
+  const years=JSON.parse(a.target_years_json||'[]');
   const running=a.status==='running';
-
   const el=document.createElement('div');
-  el.innerHTML=`<form id="editForm" class="form-grid" style="margin-top:4px">
-    <div class="field"><label class="field-label">姓名</label><input class="input" id="eName" value="${esc(a.display_name||'')}"></div>
-    <div class="field"><label class="field-label">账号</label><input class="input" id="eUser" value="${esc(a.username)}" readonly style="opacity:.6"></div>
-    <div class="field"><label class="field-label">密码（空则不修改）</label><input class="input" id="ePass" type="password" placeholder="不修改请留空"></div>
-    <div class="field"><label class="field-label">学科1</label><input class="input" id="eSub1" value="${esc((reqs[0]||{}).category||'')}"></div>
-    <div class="field"><label class="field-label">学分1</label><input class="input" id="eCr1" type="number" min="0" step="0.5" value="${(reqs[0]||{}).credits||''}"></div>
-    <div class="field"><label class="field-label">学科2</label><input class="input" id="eSub2" value="${esc((reqs[1]||{}).category||'')}"></div>
-    <div class="field"><label class="field-label">学分2</label><input class="input" id="eCr2" type="number" min="0" step="0.5" value="${(reqs[1]||{}).credits||''}"></div>
-    <div class="field"><label class="field-label">备注</label><input class="input" id="eRemark" value="${esc(extra.remark||'')}"></div>
-  </form>`;
+  if(isB()){
+    const yearChecks=recentFiveYears().map(yr=>{
+      const chk=years.includes(yr)?' checked':'';
+      return `<label class="year-pill" style="margin:4px"><input type="checkbox" class="eYear" value="${yr}"${chk}>${yr}年</label>`;
+    }).join('');
+    el.innerHTML=`<form id="editForm" class="form-grid" style="margin-top:4px">
+      <div class="field"><label class="field-label">账号</label><input class="input" value="${esc(a.username)}" readonly style="opacity:.6"></div>
+      <div class="field"><label class="field-label">密码（空则不修改）</label><input class="input" id="ePass" type="password" placeholder="不修改请留空"></div>
+      <div class="field"><label class="field-label">备注</label><input class="input" id="eRemark" value="${esc(extra.remark||'')}"></div>
+      <div class="field" style="grid-column:1/-1"><label class="field-label">目标年度</label><div class="year-pills">${yearChecks}</div></div>
+      <div class="field" style="grid-column:1/-1"><label class="field-label">任务模式</label>
+        <div class="segmented" id="eModeGroup">
+          <button type="button" data-val="normal" aria-pressed="${extra.report_mode!=='fast'}" onclick="selectMode(this)">标准</button>
+          <button type="button" data-val="fast" aria-pressed="${extra.report_mode==='fast'}" onclick="selectMode(this)">快速</button>
+        </div></div>
+    </form>`;
+  }else{
+    el.innerHTML=`<form id="editForm" class="form-grid" style="margin-top:4px">
+      <div class="field"><label class="field-label">姓名</label><input class="input" id="eName" value="${esc(a.display_name||'')}"></div>
+      <div class="field"><label class="field-label">账号</label><input class="input" value="${esc(a.username)}" readonly style="opacity:.6"></div>
+      <div class="field"><label class="field-label">密码（空则不修改）</label><input class="input" id="ePass" type="password" placeholder="不修改请留空"></div>
+      <div class="field"><label class="field-label">学科1</label><input class="input" id="eSub1" value="${esc((reqs[0]||{}).category||'')}"></div>
+      <div class="field"><label class="field-label">学分1</label><input class="input" id="eCr1" type="number" min="0" step="0.5" value="${(reqs[0]||{}).credits||''}"></div>
+      <div class="field"><label class="field-label">学科2</label><input class="input" id="eSub2" value="${esc((reqs[1]||{}).category||'')}"></div>
+      <div class="field"><label class="field-label">学分2</label><input class="input" id="eCr2" type="number" min="0" step="0.5" value="${(reqs[1]||{}).credits||''}"></div>
+      <div class="field"><label class="field-label">备注</label><input class="input" id="eRemark" value="${esc(extra.remark||'')}"></div>
+    </form>`;
+  }
   const confirmed=await window.ui.confirm({
-    title:'编辑重学',
-    bodyEl:el,
-    okText:'保存并重学',
-    okTone:'primary',
-    cancelText:'取消',
-    extraNote:running?'<p style="color:var(--c-warning);font-size:12.5px;margin-top:10px">⚠️ 当前账号正在运行，保存后将中断任务。</p>':'',
+    title:'编辑重学',bodyEl:el,okText:'保存并重学',okTone:'primary',cancelText:'取消',
+    extraNote:running?'<p style="color:var(--c-warning);font-size:12.5px;margin-top:10px">当前账号正在运行，保存后将中断任务。</p>':'',
   });
   if(!confirmed) return;
-  const newReqs=[];
-  const ns1=document.getElementById('eSub1').value.trim(),nc1=parseFloat(document.getElementById('eCr1').value||'0');
-  const ns2=document.getElementById('eSub2').value.trim(),nc2=parseFloat(document.getElementById('eCr2').value||'0');
-  if(ns1) newReqs.push({category:ns1,credits:nc1});
-  if(ns2) newReqs.push({category:ns2,credits:nc2});
-  const newExtra={...extra,remark:document.getElementById('eRemark').value.trim()};
-  const body={display_name:document.getElementById('eName').value.trim()||a.display_name,
-    requirements:newReqs,extra:newExtra,requeue:true};
+  let body={requeue:true};
   const pw=document.getElementById('ePass').value;
   if(pw) body.password=pw;
+  if(isB()){
+    const sel=[...document.querySelectorAll('.eYear:checked')].map(i=>i.value);
+    if(!sel.length){window.ui.toast('请至少选择一个目标年度','warning');return;}
+    body.target_years=sel;
+    body.report_mode=document.querySelector('#eModeGroup [aria-pressed="true"]')?.dataset.val||'normal';
+    body.extra={...extra,remark:document.getElementById('eRemark').value.trim()};
+  }else{
+    const newReqs=[];
+    const ns1=document.getElementById('eSub1').value.trim(),nc1=parseFloat(document.getElementById('eCr1').value||'0');
+    const ns2=document.getElementById('eSub2').value.trim(),nc2=parseFloat(document.getElementById('eCr2').value||'0');
+    if(ns1) newReqs.push({category:ns1,credits:nc1});
+    if(ns2) newReqs.push({category:ns2,credits:nc2});
+    body.display_name=document.getElementById('eName').value.trim()||a.display_name;
+    body.requirements=newReqs;
+    body.extra={...extra,remark:document.getElementById('eRemark').value.trim()};
+  }
   try{await api('PATCH',`/api/accounts/${id}`,body);window.ui.toast('已保存并重新入队','success',2000);await refresh();}
   catch(e){window.ui.toast(e.message,'danger');}
 }
@@ -882,36 +969,110 @@ async function openDrawer(id){
 }
 function closeDrawer(){document.getElementById('drawerMount').innerHTML='';}
 
+function rechargeBlock(a){
+  if(!_config.has_recharge) return '';
+  const id=a.id;
+  return `<div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--c-border)">
+    <h3 style="font-size:13px;margin-bottom:10px">购卡 / 充值</h3>
+    <div class="form-grid" style="grid-template-columns:1fr 1fr">
+      <div class="field"><label class="field-label">卡号</label>
+        <input class="input" id="rcCard" type="text" placeholder="卡号"></div>
+      <div class="field"><label class="field-label">卡号密码</label>
+        <input class="input" id="rcCardPwd" type="password" placeholder="如有则填"></div>
+    </div>
+    <button type="button" class="btn btn-outline btn-sm" style="margin-top:10px" onclick="submitRecharge(${id})">提交购卡</button>
+  </div>`;
+}
+async function submitRecharge(id){
+  const card=document.getElementById('rcCard')?.value?.trim();
+  const pwd=document.getElementById('rcCardPwd')?.value||'';
+  if(!card){window.ui.toast('请填写卡号','warning');return;}
+  if(!await window.ui.confirm({title:'确认购卡',body:'将为该账号提交购卡/充值请求。',okText:'提交',okTone:'primary'})) return;
+  try{
+    const r=await api('POST',`/api/accounts/${id}/recharge`,{card_no:card,card_password:pwd});
+    window.ui.toast(r.message||'购卡请求已提交','success',2500);
+    await refresh();
+  }catch(e){window.ui.toast(e.message,'danger');}
+}
+
 function renderDrawerContent(a){
   const extra=JSON.parse(a.extra_json||'{}');
-  const reqs=JSON.parse(a.requirements_json||'[]');
   const runs=a.runs||[];
-  const hasErrLog=!!(a.error_log_text);
-  const copyBtn=hasErrLog?`<br><button class="btn btn-outline btn-sm" style="margin-top:12px" onclick="copyErrLog(${JSON.stringify(a.error_log_text).replace(/</g,'&lt;')})">
+  const showCopy=a.status==='failed'||a.status==='retrying'||!!(a.error_log_text);
+  const logText=a.error_log_text||'（暂无日志内容）';
+  const copyBtn=showCopy?`<br><button class="btn btn-outline btn-sm" style="margin-top:12px" onclick="copyErrLog(${JSON.stringify(logText)})">
     <svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="9" height="12" rx="1.5"/><path d="M3 4H2a1 1 0 00-1 1v9a1 1 0 001 1h9a1 1 0 001-1v-1"/></svg>复制日志
   </button>`:'';
 
-  const infoTab=`<dl class="kv">
-    <dt>姓名</dt><dd>${esc(a.display_name||'—')}</dd>
-    <dt>账号</dt><dd style="font-family:var(--font-mono)">${esc(a.username)}</dd>
-    <dt>状态</dt><dd>${pillHtml(a.status)}</dd>
-    <dt>说明</dt><dd>${esc(a.status_msg||'—')}</dd>
-    <dt>当前阶段</dt><dd>${esc(extra.phase||'—')}</dd>
-    <dt>重试次数</dt><dd>${a.retry_count||0}</dd>
-    <dt>创建时间</dt><dd>${fmtTs(a.created_at)}</dd>
-    <dt>更新时间</dt><dd>${fmtTs(a.updated_at)}</dd>
-  </dl>${copyBtn}`;
+  let infoTab='';
+  if(isB()){
+    infoTab=`<dl class="kv">
+      <dt>账号</dt><dd style="font-family:var(--font-mono)">${esc(a.username)}</dd>
+      <dt>姓名</dt><dd>${esc(a.display_name||extra.real_name||'（登录后获取）')}</dd>
+      <dt>身份证</dt><dd>${esc(extra.id_card||'—')}</dd>
+      <dt>备注</dt><dd>${esc(extra.remark||'—')}</dd>
+      <dt>目标年度</dt><dd>${esc(yearSummary(a))}</dd>
+      <dt>任务模式</dt><dd>${extra.report_mode==='fast'?'快速':'标准'}</dd>
+      <dt>状态</dt><dd>${pillHtml(a.status)}</dd>
+      <dt>说明</dt><dd>${esc(a.status_msg||'—')}</dd>
+      <dt>当前阶段</dt><dd>${esc(extra.phase||'—')}</dd>
+      <dt>重试次数</dt><dd>${a.retry_count||0}</dd>
+      <dt>创建时间</dt><dd>${fmtTs(a.created_at)}</dd>
+      <dt>更新时间</dt><dd>${fmtTs(a.updated_at)}</dd>
+    </dl>${rechargeBlock(a)}${copyBtn}`;
+  }else{
+    const reqs=JSON.parse(a.requirements_json||'[]');
+    const reqLine=reqs.map(r=>`${r.category} ${r.credits}分`).join('、')||'—';
+    infoTab=`<dl class="kv">
+      <dt>姓名</dt><dd>${esc(a.display_name||'—')}</dd>
+      <dt>账号</dt><dd style="font-family:var(--font-mono)">${esc(a.username)}</dd>
+      <dt>学科·学分</dt><dd>${esc(reqLine)}</dd>
+      <dt>状态</dt><dd>${pillHtml(a.status)}</dd>
+      <dt>说明</dt><dd>${esc(a.status_msg||'—')}</dd>
+      <dt>当前阶段</dt><dd>${esc(extra.phase||'—')}</dd>
+      <dt>重试次数</dt><dd>${a.retry_count||0}</dd>
+      <dt>创建时间</dt><dd>${fmtTs(a.created_at)}</dd>
+      <dt>更新时间</dt><dd>${fmtTs(a.updated_at)}</dd>
+    </dl>${rechargeBlock(a)}${copyBtn}`;
+  }
 
-  const courseRows=(() => {
+  const courseRows=(()=>{
+    if(isB()){
+      const ys=extra.year_status||{};
+      const years=Object.keys(ys).sort((a,b)=>b.localeCompare(a));
+      if(!years.length) return '<p style="color:var(--c-text-muted);font-size:13px">暂无年度进度</p>';
+      return years.map(yr=>{
+        const y=ys[yr]||{};
+        const pct=y.progress_percent!=null?y.progress_percent:
+          (y.required_hours>0?Math.round(100*(y.earned_hours||0)/y.required_hours):0);
+        return `<div class="year-group"><h3>${esc(yr)} 年</h3><dl class="kv">
+          <dt>要求学时</dt><dd>${y.required_hours??'—'}</dd>
+          <dt>已获得</dt><dd>${y.earned_hours??'—'}</dd>
+          <dt>进度</dt><dd>${pct}% ${y.completed?'（已完成）':''}</dd>
+          <dt>当前课程</dt><dd>${esc(y.current_course_title||extra.current_course_title||'—')}</dd>
+        </dl></div>`;
+      }).join('');
+    }
     try{
       const results=extra[Object.keys(extra).find(k=>k.endsWith('_results'))||'']||[];
       if(!results.length) return '<p style="color:var(--c-text-muted);font-size:13px">暂无课程数据</p>';
-      return results.sort((a,b)=>(a.queue_rank||0)-(b.queue_rank||0))
+      return results.sort((x,y)=>(x.queue_rank||0)-(y.queue_rank||0))
         .map(c=>`<div class="run-item">
           <div class="run-top">${pillHtml(c.state||'queued')}<span>${esc(c.project_name||c.project_id||'')}</span></div>
           <div class="run-summary">${c.subject_label?esc(c.subject_label)+' · ':''} ${c.credits||0} 学分</div>
         </div>`).join('');
     }catch{return '<p style="color:var(--c-text-muted);font-size:13px">暂无数据</p>';}
+  })();
+
+  const applyRows=(()=>{
+    const tasks=a.apply_tasks||[];
+    if(!tasks.length) return '<p style="color:var(--c-text-muted);font-size:13px">暂无申请任务</p>';
+    return tasks.map(t=>`<div class="run-item">
+      <div class="run-top">${pillHtml(t.status==='succeeded'?'completed':t.status==='dead'?'failed':'queued')}
+        <span>${esc(t.project_name||t.project_id)}</span></div>
+      <div class="run-summary">${esc(t.subject_label||'')} ${t.credits||''} 学分 · 尝试 ${t.attempts||0} 次</div>
+      ${t.last_error?`<div class="run-summary" style="color:var(--c-danger)">${esc(t.last_error)}</div>`:''}
+    </div>`).join('');
   })();
 
   const historyRows=runs.length?runs.map(r=>`<div class="run-item">
@@ -921,14 +1082,21 @@ function renderDrawerContent(a){
     <details><summary>展开日志</summary><pre>${esc(JSON.stringify(JSON.parse(r.logs_json||'[]'),null,2))}</pre></details>
   </div>`).join(''):'<p style="color:var(--c-text-muted);font-size:13px">暂无运行历史</p>';
 
+  const applyTab=_config.has_credit_apply
+    ?`<button aria-selected="false" onclick="switchTab(this,'tab-apply')">申请队列</button>`:'';
+  const applyPane=_config.has_credit_apply
+    ?`<div id="tab-apply" class="tab-pane">${applyRows}</div>`:'';
+
   document.querySelector('.drawer-body').innerHTML=`
     <div class="tabs-nav">
       <button aria-selected="true" onclick="switchTab(this,'tab-info')">基本信息</button>
-      <button aria-selected="false" onclick="switchTab(this,'tab-course')">课程进度</button>
+      <button aria-selected="false" onclick="switchTab(this,'tab-course')">${isB()?'年度进度':'课程进度'}</button>
+      ${applyTab}
       <button aria-selected="false" onclick="switchTab(this,'tab-history')">运行历史</button>
     </div>
     <div id="tab-info" class="tab-pane active">${infoTab}</div>
     <div id="tab-course" class="tab-pane">${courseRows}</div>
+    ${applyPane}
     <div id="tab-history" class="tab-pane">${historyRows}</div>`;
 }
 function switchTab(btn,paneId){
@@ -1020,7 +1188,7 @@ document.addEventListener('keydown',e=>{
   }
   if(inInput) return;
   if(e.key==='/' ){e.preventDefault();document.getElementById('searchInput').focus();}
-  else if(e.key==='n'||e.key==='N'){e.preventDefault();document.getElementById('addPanel').dataset.open='true';document.getElementById('fName').focus();}
+  else if(e.key==='n'||e.key==='N'){e.preventDefault();document.getElementById('addPanel').dataset.open='true';focusAddField();}
   else if(e.key===' '){e.preventDefault();if(_paused)document.getElementById('btnResume').click();else document.getElementById('btnPause').click();}
   else if(e.key==='t'||e.key==='T'){document.getElementById('btnTheme').click();}
   else if(e.key==='?'){showShortcutHelp();}
@@ -1040,8 +1208,14 @@ function showShortcutHelp(){
 function fmtTs(ts){if(!ts)return '—';const d=new Date(ts*1000);return d.toLocaleDateString('zh-CN')+' '+d.toTimeString().slice(0,8);}
 
 // ── Init ──────────────────────────────────────────────────────────────────────
-// [OPTIONAL:B型] 取消注释下一行以初始化年度 pill：initYearPills();
-refresh().then(startPolling);
+async function boot(){
+  try{_config=await apiFetch('/api/config');}catch(e){}
+  applyLayout();
+  initYearPills();
+  await refresh();
+  startPolling();
+}
+boot();
 
 })();
 </script>

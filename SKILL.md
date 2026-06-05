@@ -222,8 +222,12 @@ templates/code/
 ├── run_service.py                  # 服务启动入口（复制到项目根）
 ├── service/
 │   ├── runtime.py                  # 单实例锁、端口探测、endpoint.json ── 完整通用，直接复制
+│   ├── config.py                   # DEFAULT/MAX_CONCURRENCY=400、日配额常量
+│   ├── states.py                   # 账号/申请状态机 + UnitState
+│   ├── course_planner.py           # A 型 tier 排序、queue_rank、学习闸门 helper
+│   ├── session_retry.py            # is_session_expired + relogin 一次重试
 │   ├── scheduling.py               # 8:00 错峰 daily_eligible_at ── A 型用，B 型可省
-│   ├── store.py                    # SQLite WAL 持久层 ── 按 [OPTIONAL] 注释裁剪
+│   ├── store.py                    # SQLite WAL 持久层 + 状态转移校验
 │   ├── orchestrator.py             # 调度器 tick ── 完整通用，直接复制
 │   ├── worker_base.py              # AccountWorkerBase ── 继承并实现 run_pipeline()
 │   ├── apply_worker.py             # ApplyWorkerBase ── [OPTIONAL:申请学分]
@@ -241,12 +245,16 @@ templates/code/
 
 | 文件 | 你需要做的事 |
 |------|------------|
+| `config.py` | 复制到 `<svc>/config.py`，改配额与 `SITE_PROFILE` |
+| `states.py` | 直接复制；`store` 已接入转移校验 |
+| `course_planner.py` | A 型分配/学習闸门用；B 型可不复制 |
+| `session_retry.py` | 直接复制；业务 Service 用 `worker.call_with_session_retry()` |
 | `runtime.py` | 直接复制，无需修改 |
 | `scheduling.py` | **A 型**：复制并在 `config.py` 设日窗；**B 型**：不复制 |
 | `store.py` | **A 型**：按可选能力删 `[OPTIONAL]`；**B 型**：删学科列、`apply_queue`、`requirements_json` 学科槽，保留 `target_years_json` |
 | `apply_worker.py` | **B 型**：不复制 |
 | `orchestrator.py` | 直接复制；`worker_factory` 参数传你的 `AccountWorker` 构造函数 |
-| `worker_base.py` | 继承 `AccountWorkerBase`，实现 `run_pipeline(account, client) -> PipelineResult` |
+| `worker_base.py` | A 型实现 `run_pipeline()`；B 型实现 `run_year_pipeline()`（`run_once` 已内置按年循环） |
 | `apply_worker.py` | 继承 `ApplyWorkerBase`，实现 `do_apply_credit(client, project_id, task)` |
 | `web/app.py` | 替换 `PLATFORM`/`LOGO_LETTER`；`run_service.py` 中注入 `app.state.store/orch/excel_io` |
 | `web/excel_io.py` | A 型保持默认；B 型将 `IMPORT_COLS` 替换为 `B_IMPORT_COLS` |

@@ -108,8 +108,25 @@ class ApplyWorkerBase(ABC):
     # ── 内部工具 ──────────────────────────────────────────────────────────────
 
     def _check_daily_quota(self, acc_id: int) -> bool:
-        """子类可覆盖；默认查 credit_applications 今日成功数。"""
-        return True  # 若无配额限制，直接返回 True
+        """查 credit_applications 今日成功数；MAX_APPLY_PER_DAY<=0 表示不限制。"""
+        try:
+            from .config import MAX_APPLY_PER_DAY
+        except ImportError:
+            MAX_APPLY_PER_DAY = self.get_daily_apply_limit()
+        limit = self.get_daily_apply_limit()
+        if MAX_APPLY_PER_DAY > 0:
+            limit = MAX_APPLY_PER_DAY
+        if limit <= 0:
+            return True
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo("Asia/Shanghai")
+        now = datetime.now(tz=tz)
+        day_start = datetime(now.year, now.month, now.day, tzinfo=tz).timestamp()
+        if not hasattr(self._store, "count_apply_success_today"):
+            return True
+        n = self._store.count_apply_success_today(acc_id, day_start_ts=day_start)
+        return n < limit
 
     def _get_client(self, acc_id: int, username: str, cookies):
         user_id = str(acc_id)

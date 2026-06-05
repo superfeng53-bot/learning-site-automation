@@ -21,6 +21,8 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
+from ..error_log import build_error_log_text
+
 PLATFORM = "<PLATFORM>"   # TODO：替换为实际平台中文名
 LOGO_LETTER = "<L>"        # TODO：1-2 个汉字/字母
 
@@ -44,7 +46,15 @@ def get_excel(request: Request):
     return request.app.state.excel_io
 
 
-def _safe_account(d: dict) -> dict:
+def _site_profile(request: Request) -> str:
+    return getattr(request.app.state, "site_profile", "A").upper()
+
+
+def _has_credit_apply(request: Request) -> bool:
+    return bool(getattr(request.app.state, "has_credit_apply", False))
+
+
+def _safe_account(d: dict, store=None, *, include_error_log: bool = True) -> dict:
     """从账号 dict 剥掉敏感字段（密码、cookies、卡号密码）。"""
     safe = dict(d)
     safe.pop("password", None)
@@ -53,11 +63,19 @@ def _safe_account(d: dict) -> dict:
     extra.pop("card_password", None)
     safe["extra_json"] = json.dumps(extra, ensure_ascii=False)
 
-    # 组装 error_log_text（供 UI 复制日志按钮）
-    err_log = extra.get("error_log_text") or ""
-    if not err_log and safe.get("status_msg"):
-        err_log = f"状态：{safe['status']}\n说明：{safe['status_msg']}"
-    safe["error_log_text"] = err_log
+    status = safe.get("status", "")
+    if include_error_log and store and status in ("failed", "retrying"):
+        runs = store.get_runs(safe["id"], limit=1)
+        apply_err = store.latest_apply_error(safe["id"]) if hasattr(store, "latest_apply_error") else ""
+        err_log = build_error_log_text(safe, runs=runs, apply_last_error=apply_err)
+        safe["error_log_text"] = err_log
+    elif include_error_log:
+        err_log = extra.get("error_log_text") or ""
+        if not err_log and status in ("failed", "retrying") and safe.get("status_msg"):
+            err_log = build_error_log_text(safe)
+        safe["error_log_text"] = err_log
+    else:
+        safe.pop("error_log_text", None)
     return safe
 
 
@@ -69,6 +87,20 @@ async def index(request: Request):
         "index.html",
         {"request": request, "PLATFORM": PLATFORM, "LOGO_LETTER": LOGO_LETTER},
     )
+
+
+# ── 配置（前端 A/B 型与能力开关）──────────────────────────────────────────────
+
+@app.get("/api/config")
+async def get_config(request: Request):
+    profile = _site_profile(request)
+    return {
+        "platform": PLATFORM,
+        "site_profile": profile,
+        "has_credit_apply": _has_credit_apply(request),
+        "has_subjects": profile == "A",
+        "has_recharge": bool(getattr(request.app.state, "has_recharge", False)),
+    }
 
 
 # ── 健康检查 ──────────────────────────────────────────────────────────────────
@@ -89,8 +121,11 @@ async def list_accounts(
 ):
     store = get_store(request)
     orch = get_orch(request)
-    items = store.list_accounts(status=status, search=search, limit=limit, offset=offset)
-    safe_items = [_safe_account(a) for a in items]
+    items = store.list_accounts(
+        status=status, search=search, limit=limit, offset=offset,
+        date_from=date_from, date_to=date_to,
+    )
+    safe_items = [_safe_account(a, store) for a in items]
     counts = store.count_by_status()
     return {
         "items": safe_items,
@@ -117,13 +152,19 @@ class CreateAccountBody(BaseModel):
 @app.post("/api/accounts", status_code=201)
 async def create_account(body: CreateAccountBody, request: Request):
     store = get_store(request)
+    profile = _site_profile(request)
     if store.get_account_by_username(body.username):
         raise HTTPException(400, detail=f"账号 {body.username} 已存在")
     extra = dict(body.extra)
     if body.report_mode and body.report_mode != "normal":
         extra["report_mode"] = body.report_mode
+    display = body.display_name.strip()
+    if profile == "B":
+        display = ""  # B 型登录后从站点回填姓名
+    elif not display:
+        display = body.username
     acc_id = store.create_account(
-        display_name=body.display_name or body.username,
+        display_name=display,
         username=body.username,
         password=body.password,
         requirements_json=json.dumps(body.requirements, ensure_ascii=False),
@@ -140,9 +181,7 @@ async def upload_accounts(request: Request, file: UploadFile = File(...)):
     store = get_store(request)
     excel_io = get_excel(request)
     data = await file.read()
-
-    # 通过 site_profile 判断 A/B 型（从 store 读取或在 app.state 上配置）
-    site_profile = getattr(request.app.state, "site_profile", "A")
+    site_profile = _site_profile(request)
     result = excel_io.parse_import_xlsx(data, site_profile=site_profile)
 
     added = skipped = failed = 0
@@ -163,10 +202,11 @@ async def upload_accounts(request: Request, file: UploadFile = File(...)):
             added += 1
         except Exception as exc:
             failed += 1
-            errors.append(f"账号 {row.username} 导入失败：{exc}")
+            errors.append({"row": 0, "reason": f"账号 {row.username} 导入失败：{exc}"})
 
-    return {"added": added, "skipped": skipped, "failed": failed,
-            "errors": errors if errors else None}
+    err_msgs = [e["reason"] if isinstance(e, dict) else str(e) for e in errors]
+    return {"added": added, "skipped": skipped, "failed": failed + result.failed,
+            "errors": err_msgs if err_msgs else None}
 
 
 # ── 账号详情 ──────────────────────────────────────────────────────────────────
@@ -177,11 +217,11 @@ async def get_account(account_id: int, request: Request):
     acc = store.get_account(account_id)
     if not acc:
         raise HTTPException(404, detail="账号不存在")
-    safe = _safe_account(acc)
-    safe["runs"] = store.get_runs(account_id, limit=30)
-    # [OPTIONAL:申请学分]
-    # safe["apply_tasks"] = store.list_apply_tasks(account_id)
-    # [END OPTIONAL:申请学分]
+    runs = store.get_runs(account_id, limit=30)
+    safe = _safe_account(acc, store)
+    safe["runs"] = runs
+    if _has_credit_apply(request) and hasattr(store, "list_apply_tasks"):
+        safe["apply_tasks"] = store.list_apply_tasks(account_id)
     return safe
 
 
@@ -200,6 +240,7 @@ class PatchAccountBody(BaseModel):
 @app.patch("/api/accounts/{account_id}")
 async def patch_account(account_id: int, body: PatchAccountBody, request: Request):
     store = get_store(request)
+    orch = get_orch(request)
     acc = store.get_account(account_id)
     if not acc:
         raise HTTPException(404, detail="账号不存在")
@@ -214,7 +255,6 @@ async def patch_account(account_id: int, body: PatchAccountBody, request: Reques
     if body.target_years is not None:
         updates["target_years_json"] = json.dumps(body.target_years, ensure_ascii=False)
 
-    # 合并 extra
     if body.extra or body.report_mode:
         cur_extra = json.loads(acc.get("extra_json") or "{}")
         if body.extra:
@@ -227,6 +267,7 @@ async def patch_account(account_id: int, body: PatchAccountBody, request: Reques
         store.update_account(account_id, **updates)
 
     if body.requeue:
+        orch.interrupt_account(account_id)
         store.requeue_account(account_id)
 
     return {"ok": True}
@@ -237,10 +278,42 @@ async def patch_account(account_id: int, body: PatchAccountBody, request: Reques
 @app.delete("/api/accounts/{account_id}")
 async def delete_account(account_id: int, request: Request):
     store = get_store(request)
+    orch = get_orch(request)
     if not store.get_account(account_id):
         raise HTTPException(404, detail="账号不存在")
+    orch.interrupt_account(account_id)
     store.delete_account(account_id)
     return {"ok": True}
+
+
+# ── 购卡 / 充值（可选）────────────────────────────────────────────────────────
+
+class RechargeBody(BaseModel):
+    card_no: str
+    card_password: str = ""
+
+
+@app.post("/api/accounts/{account_id}/recharge")
+async def recharge_account(account_id: int, body: RechargeBody, request: Request):
+    if not getattr(request.app.state, "has_recharge", False):
+        raise HTTPException(404, detail="本站未启用购卡/充值")
+    store = get_store(request)
+    acc = store.get_account(account_id)
+    if not acc:
+        raise HTTPException(404, detail="账号不存在")
+    handler = getattr(request.app.state, "recharge_handler", None)
+    if handler is None:
+        raise HTTPException(
+            501,
+            detail="购卡功能未配置：请在 run_service.py 设置 app.state.recharge_handler",
+        )
+    try:
+        result = handler(acc, body.card_no, body.card_password)
+    except Exception as exc:
+        raise HTTPException(500, detail=f"购卡失败：{exc}") from exc
+    if isinstance(result, dict):
+        return {"ok": bool(result.get("ok", True)), **result}
+    return {"ok": True, "message": str(result)}
 
 
 # ── 重学 ──────────────────────────────────────────────────────────────────────
@@ -248,8 +321,11 @@ async def delete_account(account_id: int, request: Request):
 @app.post("/api/accounts/{account_id}/requeue")
 async def requeue_account(account_id: int, request: Request):
     store = get_store(request)
-    if not store.get_account(account_id):
+    orch = get_orch(request)
+    acc = store.get_account(account_id)
+    if not acc:
         raise HTTPException(404, detail="账号不存在")
+    orch.interrupt_account(account_id)
     store.requeue_account(account_id)
     return {"ok": True}
 
@@ -284,8 +360,8 @@ async def resume_scheduler(request: Request):
 @app.get("/api/template")
 async def download_template(request: Request):
     excel_io = get_excel(request)
-    site_profile = getattr(request.app.state, "site_profile", "A")
-    data = excel_io.build_template_xlsx()
+    site_profile = _site_profile(request)
+    data = excel_io.build_template_xlsx(site_profile=site_profile)
     filename = f"{PLATFORM}账号模板.xlsx"
     return StreamingResponse(
         BytesIO(data),
@@ -298,14 +374,13 @@ async def download_template(request: Request):
 async def export_accounts(request: Request):
     store = get_store(request)
     excel_io = get_excel(request)
-    site_profile = getattr(request.app.state, "site_profile", "A")
+    site_profile = _site_profile(request)
     accounts = store.list_accounts(limit=10000)
-    # 加入最近运行结果
     for acc in accounts:
         runs = store.get_runs(acc["id"], limit=1)
         acc["last_run_result"] = runs[0]["result"] if runs else ""
-        extra = json.loads(acc.get("extra_json") or "{}")
-        acc["error_log_text"] = extra.get("error_log_text", "")
+        apply_err = store.latest_apply_error(acc["id"]) if hasattr(store, "latest_apply_error") else ""
+        acc["error_log_text"] = build_error_log_text(acc, runs=runs, apply_last_error=apply_err)
     data = excel_io.build_export_xlsx(accounts, site_profile=site_profile)
     import datetime
     now_str = datetime.datetime.now().strftime("%Y%m%d_%H%M")
