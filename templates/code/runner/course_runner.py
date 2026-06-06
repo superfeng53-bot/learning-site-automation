@@ -9,6 +9,7 @@ B 型（公需年度型）：使用 year_runner.py，不使用本文件。
 """
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Optional
@@ -44,6 +45,20 @@ class RunResult:
     error:         Optional[str]  = None
 
 
+@dataclass
+class ProgressProbeResult:
+    """整课跑通前的 60 秒进度增量门禁结果。"""
+    ok:               bool
+    project_id:       str
+    lesson_id:        str = ""
+    play_time_before: float = 0
+    play_time_after:  float = 0
+    delta:            float = 0
+    probe_seconds:    int = 60
+    error:            Optional[str] = None
+    logs:             list[StageLog] = field(default_factory=list)
+
+
 # ── Runner ───────────────────────────────────────────────────────────────────
 
 class CourseRunner:
@@ -54,6 +69,9 @@ class CourseRunner:
 
     #: 视频完成阈值（已播放 / 总时长）。根据站点 JS 逻辑调整。
     WATCH_THRESHOLD = 0.95
+    #: 进度探针：模拟步长与墙钟间隔（与 phase2 watch_video 校准值一致）。
+    PROBE_STEP = 30
+    PROBE_INTERVAL = 31
 
     def __init__(self, course_svc, study_svc, exam_svc=None, credit_svc=None):
         self.course  = course_svc
@@ -75,6 +93,63 @@ class CourseRunner:
             result.error = str(exc)
             result.final_state = "failed"
             result.logs.append(StageLog("runner", False, str(exc)))
+        return result
+
+    def probe_progress(
+        self,
+        project_id: str,
+        *,
+        probe_seconds: int = 60,
+        min_delta: float = 1,
+    ) -> ProgressProbeResult:
+        """
+        整课测试前的门禁：约 probe_seconds 墙钟内上报进度，断言服务端 play_time 增加。
+        不得在探针期间把章节标为完成。
+        """
+        result = ProgressProbeResult(ok=False, project_id=project_id, probe_seconds=probe_seconds)
+        try:
+            detail = self.course.get_detail(project_id)
+            run_stub = RunResult(project_id=project_id)
+            self._ensure_joined(project_id, detail, run_stub)
+            result.logs.extend(run_stub.logs)
+
+            lesson = self._first_incomplete_lesson(detail)
+            if lesson is None:
+                raise RuntimeError("no incomplete lesson to probe (course may already be done)")
+
+            result.lesson_id = str(lesson.get("id") or lesson.get("study_id") or "")
+            before = self._lesson_play_time(lesson)
+            result.play_time_before = before
+
+            deadline = time.monotonic() + max(1, probe_seconds)
+            play_time = before
+            duration = lesson.get("duration") or lesson.get("total_seconds") or 0
+            cap = duration * self.WATCH_THRESHOLD if duration else float("inf")
+
+            while time.monotonic() < deadline:
+                play_time = min(play_time + self.PROBE_STEP, cap)
+                if play_time <= before:
+                    break
+                self._record_play_time(project_id, lesson, play_time, is_complete=0)
+                if time.monotonic() >= deadline:
+                    break
+                time.sleep(self.PROBE_INTERVAL)
+
+            detail2 = self.course.get_detail(project_id)
+            lesson2 = self._find_lesson(detail2, lesson) or lesson
+            after = self._lesson_play_time(lesson2)
+            result.play_time_after = after
+            result.delta = after - before
+            result.ok = result.delta >= min_delta
+            result.logs.append(StageLog(
+                "probe", result.ok,
+                f"delta={result.delta:.1f}s (before={before}, after={after})",
+            ))
+            if not result.ok:
+                result.error = f"progress delta {result.delta} < min_delta {min_delta}"
+        except Exception as exc:
+            result.error = str(exc)
+            result.logs.append(StageLog("probe", False, str(exc)))
         return result
 
     # ── 加入课程 ──────────────────────────────────────────────────────────────
@@ -124,6 +199,35 @@ class CourseRunner:
         if played > 0:
             return LessonPhase.IN_PROGRESS
         return LessonPhase.NOT_STARTED
+
+    def _first_incomplete_lesson(self, detail: dict) -> Optional[dict]:
+        for lesson in detail.get("lessons", []):
+            if self._classify(lesson) not in (LessonPhase.DONE, LessonPhase.EXAM_PENDING):
+                return lesson
+        return None
+
+    def _find_lesson(self, detail: dict, target: dict) -> Optional[dict]:
+        tid = target.get("id") or target.get("study_id")
+        for lesson in detail.get("lessons", []):
+            lid = lesson.get("id") or lesson.get("study_id")
+            if tid and lid == tid:
+                return lesson
+        return None
+
+    def _lesson_play_time(self, lesson: dict) -> float:
+        return float(lesson.get("play_time") or lesson.get("progress") or 0)
+
+    def _record_play_time(
+        self, project_id: str, lesson: dict, play_time: float, *, is_complete: int,
+    ) -> None:
+        """调用 StudyService.record_play_time；无此方法时回退 watch_video 的单次上报。"""
+        study_id = lesson.get("study_id") or lesson.get("id")
+        if hasattr(self.study, "record_play_time"):
+            self.study.record_play_time(
+                project_id, study_id, play_time, is_complete=is_complete,
+            )
+            return
+        raise RuntimeError("StudyService.record_play_time not implemented — required for probe_progress")
 
     def _watch_lesson(self, project_id: str, lesson: dict, *, resume: bool) -> None:
         """

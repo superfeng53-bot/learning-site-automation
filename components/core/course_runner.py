@@ -8,9 +8,11 @@ site_adapter.run_course() 可直接 `CourseRunner(course, study, exam, credit).r
 """
 from __future__ import annotations
 
+import time
 from enum import Enum
+from typing import Optional
 
-from .adapter import RunResult, StageLog
+from .adapter import ProgressProbeResult, RunResult, StageLog
 
 
 class LessonPhase(str, Enum):
@@ -22,6 +24,9 @@ class LessonPhase(str, Enum):
 
 
 class CourseRunner:
+    PROBE_STEP = 30
+    PROBE_INTERVAL = 31
+
     def __init__(self, course_svc, study_svc, exam_svc=None, credit_svc=None,
                  *, complete_ratio: float = 0.95):
         self.course = course_svc
@@ -44,6 +49,49 @@ class CourseRunner:
             result.error = str(exc)
             result.final_state = "failed"
             result.logs.append(StageLog("runner", False, str(exc)))
+        return result
+
+    def probe_progress(
+        self, project_id: str, *, probe_seconds: int = 60, min_delta: float = 1,
+    ) -> ProgressProbeResult:
+        result = ProgressProbeResult(ok=False, project_id=project_id, probe_seconds=probe_seconds)
+        try:
+            detail = self.course.get_detail(project_id)
+            run_stub = RunResult(project_id=project_id)
+            self._ensure_joined(project_id, detail, run_stub)
+            result.logs.extend(run_stub.logs)
+            lesson = self._first_incomplete_lesson(detail)
+            if lesson is None:
+                raise RuntimeError("no incomplete lesson to probe")
+            result.lesson_id = str(lesson.get("id") or lesson.get("study_id") or "")
+            before = self._lesson_play_time(lesson)
+            result.play_time_before = before
+            deadline = time.monotonic() + max(1, probe_seconds)
+            play_time = before
+            duration = lesson.get("duration", 0) or 0
+            cap = duration * self.complete_ratio if duration else float("inf")
+            while time.monotonic() < deadline:
+                play_time = min(play_time + self.PROBE_STEP, cap)
+                if play_time <= before:
+                    break
+                self._record_play_time(project_id, lesson, play_time, is_complete=0)
+                if time.monotonic() >= deadline:
+                    break
+                time.sleep(self.PROBE_INTERVAL)
+            detail2 = self.course.get_detail(project_id)
+            lesson2 = self._find_lesson(detail2, lesson) or lesson
+            after = self._lesson_play_time(lesson2)
+            result.play_time_after = after
+            result.delta = after - before
+            result.ok = result.delta >= min_delta
+            result.logs.append(StageLog(
+                "probe", result.ok, f"delta={result.delta:.1f}s (before={before}, after={after})",
+            ))
+            if not result.ok:
+                result.error = f"progress delta {result.delta} < min_delta {min_delta}"
+        except Exception as exc:
+            result.error = str(exc)
+            result.logs.append(StageLog("probe", False, str(exc)))
         return result
 
     def _ensure_joined(self, project_id, detail, result):
@@ -78,6 +126,28 @@ class CourseRunner:
         if played > 0:
             return LessonPhase.IN_PROGRESS
         return LessonPhase.NOT_STARTED
+
+    def _first_incomplete_lesson(self, detail) -> Optional[dict]:
+        for lesson in detail.get("lessons", []):
+            if self._classify(lesson) not in (LessonPhase.DONE, LessonPhase.EXAM_PENDING):
+                return lesson
+        return None
+
+    def _find_lesson(self, detail, target) -> Optional[dict]:
+        tid = target.get("id") or target.get("study_id")
+        for lesson in detail.get("lessons", []):
+            if (lesson.get("id") or lesson.get("study_id")) == tid:
+                return lesson
+        return None
+
+    def _lesson_play_time(self, lesson) -> float:
+        return float(lesson.get("play_time", 0))
+
+    def _record_play_time(self, project_id, lesson, play_time: float, *, is_complete: int) -> None:
+        study_id = lesson.get("study_id") or lesson.get("id")
+        if not hasattr(self.study, "record_play_time"):
+            raise RuntimeError("StudyService.record_play_time not implemented")
+        self.study.record_play_time(project_id, study_id, play_time, is_complete=is_complete)
 
     def _watch_lesson(self, project_id, lesson, *, resume: bool):
         start = lesson.get("play_time", 0) if resume else 0

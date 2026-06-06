@@ -19,6 +19,11 @@ def main() -> int:
     p.add_argument("-u", "--username")
     p.add_argument("-p", "--password")
     p.add_argument("--project-id", required=True, help="课程/项目 ID")
+    p.add_argument(
+        "--probe-progress", action="store_true",
+        help="60 秒进度增量验证（整课跑通前的门禁，不与完整运行同跑）",
+    )
+    p.add_argument("--probe-seconds", type=int, default=60, help="探针墙钟时长，默认 60")
     p.add_argument("--apply-credit", action="store_true", help="学习完成后申请学分（站点支持时）")
     p.add_argument("--user-id", default="default")
     p.add_argument("--output-cookies", default="data/cookies.json")
@@ -59,6 +64,12 @@ def main() -> int:
         out.write_text(json.dumps(cookies, ensure_ascii=False, indent=2), encoding="utf-8")
 
     runner = mgr.get_course_runner(args.user_id)
+    if args.probe_progress:
+        result = runner.probe_progress(args.project_id, probe_seconds=args.probe_seconds)
+        payload = {k: (v if k != "logs" else [log.__dict__ for log in v]) for k, v in result.__dict__.items()}
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0 if result.ok else 1
+
     result = runner.run(args.project_id, apply_credit=args.apply_credit)
     payload = {
         "project_id": result.project_id,

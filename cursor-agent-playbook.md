@@ -269,7 +269,7 @@ cp ~/.cursor/skills/learning-site-automation/templates/agents/api-recon.md \
 | `<pkg>`/`<svc>` 命名 | captcha.py / login.py |
 | phase gate 与用户确认 | 单个 `*Service` 模块 |
 | 合并 API_REFERENCE | 整页 `index.html` |
-| 跑通端到端 smoke test | PyInstaller 打包脚本 |
+| 跑通 60s 进度探针 + 端到端 smoke test | PyInstaller 打包脚本 |
 | 写 handoff + verification report + gaps（如有） | openpyxl 模板生成（在 spreadsheet skill 指导下） |
 | 对照 phase DoD / `web-ui-spec` / `excel-spec` 验收子 agent 产出后再合并 | — |
 

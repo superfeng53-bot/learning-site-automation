@@ -272,7 +272,7 @@ templates/code/
 | `web/app.py` | 替换 `PLATFORM`/`LOGO_LETTER`；`run_service.py` 中注入 `app.state.store/orch/excel_io` |
 | `web/excel_io.py` | A 型保持默认；B 型将 `IMPORT_COLS` 替换为 `B_IMPORT_COLS` |
 | `web/index.html` | 替换 `{{ PLATFORM }}`/`{{ LOGO_LETTER }}`；B 型替换添加面板（§14）；删除 `[OPTIONAL]` 块 |
-| `runner/course_runner.py` | 调整 `WATCH_THRESHOLD`、字段名、`_watch_lesson` 参数名；B 型用 `YearTaskRunner` |
+| `runner/course_runner.py` | 调整 `WATCH_THRESHOLD`、`PROBE_STEP`/`PROBE_INTERVAL`、字段名、`_watch_lesson` 参数名；实现 `probe_progress`；B 型用 `YearTaskRunner` |
 | `run_service.py` | 替换 `<SVC>`/`<PKG>`；传入真实 `session_manager` |
 
 ### 使用规则

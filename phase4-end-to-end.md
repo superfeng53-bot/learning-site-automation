@@ -7,6 +7,7 @@ Goal: stitch the confirmed phase-2 services into one `CourseRunner` that, given 
 - [ ] `<pkg>/course_runner.py` exposes `CourseRunner(course, study, exam=None, credit=None).run(project_id) -> RunResult`
 - [ ] `RunResult` reports stage outcomes: `joined`, `watched`, `exam_passed` when applicable, `credit_applied` when credit application is in scope, plus a per-chapter log
 - [ ] `run_course.py` at project root: `python run_course.py --cookies data/cookies.json --project-id <uuid>` works end-to-end
+- [ ] **Progress gate**: `CourseRunner.probe_progress(project_id, probe_seconds=60)` (or `run_course.py --probe-progress`) passes on the smoke-test course **before** any full-course run is attempted
 - [ ] Resumable: if the run crashes mid-watch, re-running picks up where it left off (uses progress API, not local state)
 - [ ] All transient failures auto-recover via phase-3 plumbing; only business failures stop the run
 - [ ] Optional `--account data/account.json --auto-login` mode that combines `ensure_session` with the runner
@@ -19,6 +20,7 @@ When `docs/API_REQUIREMENTS.md` specifies **B — 公需年度型** (`site-profi
 - [ ] `run_year.py` CLI: `--cookies` + `--years 2026,2025` runs years **in list order**
 - [ ] Inside each year: `get_year_courses` → filter pending → serial `study_course` → `take_exam` per course when required
 - [ ] Completion probe: certificate `earned_hours >= required_hours` for that year
+- [ ] **Progress gate** (before full `run_year.py`): on the year's first pending course, run the same ~60s progress-increment probe (via `probe_progress` on that course's `project_id`, or a B-type equivalent on `study_course` heartbeat) and record pass/fail in `PHASE4_REPORT.md`
 - [ ] **Do not** generate `course_planner.py` or subject-mapping for B-only projects
 
 Phase 5 worker calls this module in a `for year in account.target_years` loop instead of `CourseRunner.run(project_id)`.
@@ -155,6 +157,49 @@ class CourseRunner:
 
 Adapt the lesson-classification logic to whatever fields the site's detail endpoint actually returns (you discovered them in phase 2).
 
+## Progress increment probe (gate before full run)
+
+**Mandatory gate**: do **not** start the full-course smoke test until a short progress probe passes on the same `project_id` you will use for the full run (typically `<smallest-course>`).
+
+Purpose: confirm join + `record_play_time` (or site equivalent) actually moves server-side progress, without waiting for a multi-hour video to finish.
+
+### Protocol
+
+1. `get_detail(project_id)` → pick the **first incomplete lesson** (skip `DONE` / `EXAM_PENDING`).
+2. If the course requires join and is not joined → `join_project` (same as full run).
+3. Record `play_time_before` from that lesson (field names per phase-2 recon).
+4. For **`probe_seconds` wall-clock** (default **60**), loop `record_play_time` using the site's calibrated `step` / `interval` from phase 2 (`phase2-api-tools.md` § Video Progress). **Do not** set `is_complete=1` and **do not** cross `WATCH_THRESHOLD` — stop the probe before the lesson would count as finished.
+5. `get_detail(project_id)` again → read `play_time_after` on the same lesson.
+6. **Pass** when `delta = play_time_after - play_time_before` is **≥ `min_delta`** (default **1** second, or one successful `step` if the site quantizes progress).
+
+Expose on `CourseRunner`:
+
+```python
+@dataclass
+class ProgressProbeResult:
+    ok: bool
+    project_id: str
+    lesson_id: str = ""
+    play_time_before: float = 0
+    play_time_after: float = 0
+    delta: float = 0
+    probe_seconds: int = 60
+    error: str | None = None
+    logs: list[StageLog] = field(default_factory=list)
+
+def probe_progress(self, project_id: str, *, probe_seconds: int = 60, min_delta: float = 1) -> ProgressProbeResult:
+    ...
+```
+
+CLI (mutually exclusive with full run):
+
+```bash
+python run_course.py --account data/account.json --project-id <smallest-course> --probe-progress
+python run_course.py --account data/account.json --project-id <uuid> --probe-progress --probe-seconds 60
+```
+
+On failure: fix `step`/`interval`, join path, or lesson field mapping in phase 2 — **do not** proceed to full-course smoke.
+
 ## `run_course.py` (project root entry)
 
 Three input modes, easiest to most explicit:
@@ -168,6 +213,9 @@ python run_course.py --account data/account.json --project-id <uuid>
 
 # Mode C: full inline
 python run_course.py -u 13800000000 -p ******** --project-id <uuid> --apply-credit
+
+# Gate (run this first on the same project-id):
+python run_course.py --account data/account.json --project-id <smallest-course> --probe-progress
 ```
 
 Skeleton:
@@ -184,6 +232,9 @@ def main():
     p.add_argument("-u", "--username")
     p.add_argument("-p", "--password")
     p.add_argument("--project-id", required=True)
+    p.add_argument("--probe-progress", action="store_true",
+                   help="60s progress-increment gate; do not run full course")
+    p.add_argument("--probe-seconds", type=int, default=60)
     p.add_argument("--apply-credit", action="store_true")
     p.add_argument("--user-id", default="default")
     args = p.parse_args()
@@ -211,6 +262,10 @@ def main():
         Path("data/cookies.json").write_text(json.dumps(cookies), encoding="utf-8")
 
     runner = mgr.get_course_runner(args.user_id)
+    if args.probe_progress:
+        result = runner.probe_progress(args.project_id, probe_seconds=args.probe_seconds)
+        print(json.dumps({k: v for k, v in result.__dict__.items()}, ensure_ascii=False, indent=2))
+        sys.exit(0 if result.ok else 1)
     result = runner.run(args.project_id, apply_credit=args.apply_credit)
     print(json.dumps({
         "project_id": result.project_id,
@@ -231,15 +286,18 @@ Add a `get_course_runner(user_id)` factory on `SessionManager` for ergonomics.
 
 ## Smoke Test Checklist
 
-Run, in order, against the test account:
+Run, in order, against the test account. **Step 0 is a hard gate** — if it fails, fix phase-2 progress reporting before attempting steps 1–5.
 
+0. **Progress increment probe** (same `project_id` as step 1):
+   `python run_course.py --account data/account.json --project-id <smallest-course> --probe-progress`
+   → JSON `ok: true`, `delta >= 1` (or ≥ one `step`); record `play_time_before` / `play_time_after` in `PHASE4_REPORT.md`
 1. `python run_course.py --account data/account.json --project-id <smallest-course>` → mandatory stage booleans true; optional booleans are asserted only when selected in `docs/API_REQUIREMENTS.md`
 2. Same command again → should be a no-op (everything `DONE`), exits cleanly
 3. Delete `data/cookies.json`, run again → fresh login + full run
 4. Pick a course you've already half-watched in browser, run → confirms resume behavior
 5. If credit application is in scope per `docs/API_REQUIREMENTS.md`, pass `--apply-credit` → check `credit_applied=true` and surface the hint dict if the site returned a code. If not in scope, verify the CLI rejects or omits `--apply-credit` clearly.
 
-If 4 doesn't work, the lesson-classification heuristic is wrong — adjust thresholds.
+If step 0 fails, tune `step`/`interval` or field mapping — not `WATCH_THRESHOLD`. If step 4 fails, the lesson-classification heuristic is wrong — adjust thresholds.
 
 ## End-of-phase Decision Point
 
@@ -252,6 +310,7 @@ If the user stops here, summarize the API surface they need to call: `get_sessio
 
 ## Pitfalls
 
+- **Skipping the progress probe**: long videos make full smoke painful, but step 0 exists precisely to catch broken `record_play_time` early — never skip it for convenience.
 - **`played >= duration * 0.95` heuristic**: too aggressive, the site may consider 95% as not-watched. Read the site's own JS to find the actual completion threshold. Common values: 98%, 100%, or `tail_time` check.
 - **Re-joining a finished course**: some sites error out; check `detail.joined` first.
 - **Survey/eval required before exam**: rare but exists. Add a pre-exam stage if you see it during phase 2 recon.

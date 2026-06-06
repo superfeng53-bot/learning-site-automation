@@ -100,6 +100,20 @@ class RunResult:
 
 
 @dataclass
+class ProgressProbeResult:
+    """整课跑通前的进度增量门禁（默认 60 秒墙钟）。"""
+    ok: bool
+    project_id: str
+    lesson_id: str = ""
+    play_time_before: float = 0
+    play_time_after: float = 0
+    delta: float = 0
+    probe_seconds: int = 60
+    error: str | None = None
+    logs: list[StageLog] = field(default_factory=list)
+
+
+@dataclass
 class ApplyResult:
     ok: bool
     message: str = ""
