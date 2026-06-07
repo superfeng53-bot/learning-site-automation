@@ -1,7 +1,7 @@
 # Web Console UI Spec（固定，不要跑偏）
 
 本规格描述 phase 5 的 Web 控制台必须长什么样、用什么、怎么交互。  
-**通用模板已预写于 `templates/code/web/index.html`（A 型完整实现）。执行 agent 直接复制该文件，替换 `{{ PLATFORM }}`/`{{ LOGO_LETTER }}`，B 型替换添加面板（§14），删除 `[OPTIONAL]` 块即可。本规格是权威来源；模板与规格冲突时以规格为准，修模板而非改规格。**  
+**通用模板已预写于 `templates/code/web/index.html`（A 型完整实现，含分页/抽屉修复）。执行 agent 直接复制该文件，替换 `{{ PLATFORM }}`/`{{ LOGO_LETTER }}`；B 型替换添加面板（§14）；B′ 型按 §15；删除 `[OPTIONAL]` 块即可。本规格是权威来源；模板与规格冲突时以规格为准，修模板而非改规格。**  
 所有"可以这么写也可以那么写"的位置都已固定下来。除非用户明确要求，**不要**临时引入新依赖、新组件库、新色板。
 
 ---
@@ -850,3 +850,84 @@ function recentFiveYears() {
 - [ ] 未选年度提交被拦截（中文 toast）
 - [ ] 列表/抽屉无学科1/学分必填提示
 - [ ] Excel 导入列与 §14.2 一致（见 `excel-spec.md` §2B）
+
+---
+
+## 15. Site profile B′ — 项目驱动型 Web UI（固定）
+
+当 `docs/API_REQUIREMENTS.md` 为 **B_prime — 项目驱动型** 时，§6.5 添加面板按本节实现，**替代**学科/学分表单与 B 型年度 pill。参考 `医学24/yixue24_service/web/templates/index.html`。
+
+### 15.1 添加面板字段（B′ 型）
+
+| 字段 | 控件 | 说明 |
+|------|------|------|
+| 账号 | `input` | 必填 |
+| 密码 | `input type=password` | 必填 |
+| 备注 | `input` | 可选 |
+| 任务模式 | `radio` 或 segmented | `标准`（normal）/ `快速`（fast），默认标准 |
+
+**不展示**：目标年度 pill、学科1/2、学分、卡号。
+
+### 15.2 列表与详情
+
+- 列表列：姓名、账号、备注、状态、进度（`project_status` 汇总 `progress_percent`）。
+- 展开/抽屉：按**项目**分组展示 `extra.project_status[project_id]`：
+  - 需求总分（`total_credits` / `N_ZXF`）
+  - 已获学分（`earned_credits`）
+  - 计划课程数、进度条（`progress_percent`）
+  - 当前课程名（runner 写入 `current_course_title`）
+- 课程 Tab：展示**计划课程**列表（非项目下全部课），含 phase（学习中/待考/已通过）。
+- 「同步项目」按钮：调用 `POST /api/accounts/{id}/sync-projects`，刷新 `project_status`。
+- **正在执行**徽章：仅 `status=running` 且 worker 写入的当前课程；**隐藏**站点原生「学习中」状态（易与 runner 混淆）。
+
+### 15.3 API 形状（B′ 型）
+
+| 方法 | 路径 | Body 要点 |
+|------|------|-----------|
+| POST | `/api/accounts` | `{ username, password, remark?, report_mode?: "normal"\|"fast" }` |
+| POST | `/api/accounts/{id}/sync-projects` | 无 body；返回 `{ account }` 含更新后 `extra.project_status` |
+| PATCH | `/api/accounts/{id}` | 同上；`requeue` 行为同 A 型 |
+
+`GET /api/accounts/{id}` 的 `extra` 含 `project_status`、`current_project_id`、`current_course_title`、`phase`。
+
+### 15.4 账号列表分页（全画像通用，B′ 实践验证）
+
+列表 API 支持 `limit` + `offset`，响应含 `filtered_total`（筛选后总数，非仅当前页条数）。
+
+- 默认 `pageSize=50`；可选 20 / 50 / 100 / 200。
+- 工具栏文案：`第 1–50 条，共 123 条`（用 `filtered_total`，非 `items.length`）。
+- 底部分页栏 `.list-pagination`：上一页 / 下一页 + 每页条数选择。
+- 筛选/搜索变更时重置 `_page=1`。
+
+### 15.5 响应式列表（§7.4 补丁，全画像）
+
+桌面（`min-width: 641px`）只显示表格；移动端（`max-width: 640px`）只显示卡片。**禁止**同时 `display` 表格与卡片（医学24 曾出现双渲染）。
+
+```javascript
+const _listMq = window.matchMedia('(max-width:640px)');
+function applyListLayout() {
+  const mobile = _listMq.matches;
+  tableWrap.style.display = hasData && !mobile ? 'block' : 'none';
+  cardList.style.display = hasData && mobile ? 'flex' : 'none';
+}
+```
+
+### 15.6 抽屉 stacking context（全画像）
+
+```css
+#drawerMount { position: fixed; inset: 0; z-index: 140; pointer-events: none; }
+#drawerMount:empty { display: none; }
+.drawer-backdrop { position: absolute; inset: 0; pointer-events: auto; }
+.drawer { position: absolute; z-index: 1; pointer-events: auto; }
+```
+
+复制日志按钮用 `addEventListener('click', () => copyErrLog(logText))`，**禁止** `onclick="copyErrLog(${JSON.stringify(...)})"`（长日志会被截断）。
+
+### 15.7 B′ 验收追加项
+
+- [ ] 添加面板无年度 pill、无学科/学分
+- [ ] 抽屉按项目展示学分进度与计划课程
+- [ ] 「同步项目」可用且 toast 中文反馈
+- [ ] 分页与 `filtered_total` 正确
+- [ ] 桌面/移动互斥渲染；抽屉不被遮罩盖住
+- [ ] Excel 导入列与 §15.1 一致（见 `excel-spec.md` §2B′）

@@ -15,13 +15,14 @@ Goal: wrap the confirmed business endpoints the site exposes into thin `<pkg>/*.
 
 Before any Phase 2 browser reconnaissance or service generation, read **`site-profiles.md`**（含 **§B 型快速路径**）。
 
-### 0.1 定画像（A / B）
+### 0.1 定画像（A / B / B′）
 
 | 情况 | 动作 |
 |------|------|
 | 用户目标已写明公需 / 按年 / 年度学时，且无疑义 | 直接 `site_profile: B`，**不**单独 AskQuestion |
+| Phase 1 有已报名项目 API + `N_ZXF`，无 `yearly_learning` | 直接 `site_profile: B_prime`，**不**单独 AskQuestion |
 | 用户目标已写明学科规划 / 双卫式选课 / 申请学分 | 直接 `site_profile: A` |
-| 不明 | **一次** `AskQuestion` 单选 A / B（文案见 `site-profiles.md`） |
+| 不明 | **一次** `AskQuestion` 单选 A / B / B′（文案见 `site-profiles.md`） |
 
 ### 0.2 定可选能力（按画像分叉）
 
@@ -31,6 +32,13 @@ Before any Phase 2 browser reconnaissance or service generation, read **`site-pr
 2. **不要**跑「学科列表 / 注册 / 购卡 / 其他」全量多选。
 3. **仅当** `site-profiles.md` §B 型快速路径「追加提问」表有触发项时，再 `AskQuestion` 补选（通常 0–1 次）。
 4. 复制 `templates/requirements-year-driven.md` → `docs/通用需求说明.md`（可与 0.2 并行）。
+
+**B′ — 项目驱动型**
+
+1. 复制 **`templates/api-requirements-b-prime.md`** → `docs/API_REQUIREMENTS.md`，替换 `<PLATFORM>`。
+2. 复制 `templates/requirements-project-driven.md` → `docs/通用需求说明.md`。
+3. Phase 2 必须产出 `<pkg>/course_plan.py`（复制 `templates/code/api/course_plan.py` 并对接字段）。
+4. **不要**实现 `yearly_learning`、`target_years`、A 型 `course_planner`。
 
 **A — 学科规划型**
 
@@ -46,6 +54,7 @@ Profile-specific Phase 2 domains:
 |---------|-----------------------------------------------|
 | A | `course` catalog + optional `credit`; optional subject list API |
 | B | `course` as **yearly_learning + year_courses + certificate**; `task` or `year_runner`; **固定 skip** `credit` and subject-list APIs |
+| B′ | `course` as **enrolled_projects + project_courses + course_plan**; `project_task`; **固定 skip** `credit`, subject-list, `yearly_learning` |
 
 Mandatory capabilities are always in scope:
 
@@ -332,3 +341,6 @@ One section per service, one sub-section per method. Include real (sanitized) re
 - **Form vs JSON**: AJ-Captcha endpoints are JSON, business endpoints are usually form. Mixing breaks silently.
 - **`Content-Type` matters**: some sites reject the body if `charset=UTF-8` is missing.
 - **Trailing `;`/`,` in cookies**: don't manually join — let `requests.Session` manage them.
+- **Exam answer in `TMXX`, not `SJTM.C_ZQDA`**（医学24 验证）：部分站点试卷 JSON 的正确答案在 `TMXX[].C_SFZQDA=1` 的 `N_XXBH`，`C_ZQDA` 为空会导致交卷失败。实现 `_correct_answer()` 时两种格式都试。
+- **AJAX study report `RemoteDisconnected`**：学习上报类高频 POST 用 `HttpClient.ajax_post_safe`（4 次指数退避），勿裸 `ajax_post`。
+- **项目需求学分 vs 考试门数**：进度规划用 `N_ZXF`（需求总分），勿误用 `N_KKSJS`（考试课程数）。

@@ -116,7 +116,7 @@ async def health():
 async def list_accounts(
     request: Request,
     status: str = "", search: str = "",
-    limit: int = 200, offset: int = 0,
+    limit: int = 50, offset: int = 0,
     date_from: float = 0, date_to: float = 0,
 ):
     store = get_store(request)
@@ -127,14 +127,32 @@ async def list_accounts(
     )
     safe_items = [_safe_account(a, store) for a in items]
     counts = store.count_by_status()
+    filtered_total = store.count_accounts(
+        status=status, search=search,
+        date_from=date_from, date_to=date_to,
+    )
     return {
         "items": safe_items,
         "total": counts.get("total", 0),
+        "filtered_total": filtered_total,
+        "limit": limit,
+        "offset": offset,
         "counts": counts,
         "active_workers": orch.active_workers,
         "paused": store.is_paused(),
         "concurrency_limit": store.get_concurrency_limit(),
     }
+
+
+# ── 同步站点项目进度（B′ 型）────────────────────────────────────────────────
+# [OPTIONAL:B_prime] 仅 B_prime 画像实现；复制 project_sync.build_project_status
+
+@app.post("/api/accounts/{account_id}/sync-projects")
+async def sync_account_projects(account_id: int, request: Request):
+    if _site_profile(request) not in ("B_prime",):
+        raise HTTPException(400, detail="仅 B′ 项目驱动型支持同步项目")
+    # TODO: ensure_session → build_project_status → store.update extra.project_status
+    raise HTTPException(501, detail="请实现 project_sync.build_project_status")
 
 
 # ── 创建账号 ──────────────────────────────────────────────────────────────────

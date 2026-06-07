@@ -5,7 +5,8 @@
   - _watch_lesson() 参数名（适配站点 StudyService.watch_video 签名）
   - _take_exam() / _apply_credit() 按确认的能力范围启用/禁用
 
-B 型（公需年度型）：使用 year_runner.py，不使用本文件。
+B 型（公需年度型）：使用 YearTaskRunner / run_year.py，不使用本文件。
+B′ 型（项目驱动型）：使用 project_runner.py（ProjectTaskRunner），不使用本文件。
 """
 from __future__ import annotations
 

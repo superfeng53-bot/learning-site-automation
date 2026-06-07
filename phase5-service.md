@@ -46,6 +46,19 @@ When `site_profile: B`:
 - Account status machine: **no** `waiting_apply`.
 - **No daily learn/apply quota**（公需无单日限制）：Worker **不**调用「今日已学 N 门 → `daily_eligible_at(明日)`」；`config.py` **不设** `MAX_LEARN_PER_DAY` / `MAX_APPLY_PER_DAY`；课程单元 **无** `daily_learn_date`。`scheduling.py` 的 8:00 spread **可省略**（仅 A 型或用户明确要求日切错峰时再实现）。
 
+### Site profile B′ — 项目驱动型 Worker
+
+When `site_profile: B_prime`:
+
+- Store **no** `target_years_json`; `requirements_json` stays `[]`.
+- Copy `templates/code/service/project_sync.py` → `<svc>/project_sync.py`.
+- `AccountWorker.run_once`: session → **`ProjectTaskRunner.run_account()`** — no `course_planner`, no `YearTaskRunner`.
+- `extra_json` must track `project_status` (per `build_project_status()`), `current_project_id`, `current_course_title`, `report_mode`, `phase`.
+- Web UI per `web-ui-spec.md` §15; Excel per `excel-spec.md` §2B′.
+- Expose **`POST /api/accounts/{id}/sync-projects`** in `web/app.py` (login + `build_project_status` + merge into `extra_json`).
+- `GET /api/accounts` returns **`filtered_total`** for pagination (`store.count_accounts` with same filters).
+- Schema: omit `apply_queue`, `ai_subject_cache`, `scheduling.py` (same as B).
+
 ## Schema (SQLite WAL)
 
 The schema below is the full learning + credit-application shape. Remove or adapt optional tables/columns when the confirmed scope does not include the corresponding capability.

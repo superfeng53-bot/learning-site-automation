@@ -83,6 +83,30 @@ class HttpClient:
                 time.sleep(2.0 * (2 ** i) + random.uniform(0, 0.5))
         raise last  # type: ignore[misc]
 
+    def ajax_post(self, path: str, body: str) -> dict[str, Any]:
+        """AJAX 表单 POST，返回 JSON。B′ 型学习上报高频调用建议改用 ajax_post_safe。"""
+        r = self.session.post(
+            f"{self.base_url}{path}",
+            data=body,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            timeout=30,
+        )
+        r.raise_for_status()
+        return r.json()
+
+    def ajax_post_safe(self, path: str, body: str, *, attempts: int = 4) -> dict[str, Any]:
+        """AJAX POST 带指数退避重试（RemoteDisconnected 等瞬时网络错误）。"""
+        last: Exception | None = None
+        for i in range(attempts):
+            try:
+                return self.ajax_post(path, body)
+            except requests.RequestException as exc:
+                last = exc
+                if i + 1 == attempts:
+                    break
+                time.sleep(2.0 * (2 ** i) + random.uniform(0, 0.5))
+        raise last  # type: ignore[misc]
+
     def form_get_html(self, path: str, params: dict[str, Any] | None = None, *, attempts: int = 4) -> str:
         last: Exception | None = None
         for i in range(attempts):

@@ -197,9 +197,17 @@ tbody td{padding:12px 14px;font-size:13.5px;vertical-align:middle}
 .modal-foot{padding:14px 20px;display:flex;justify-content:flex-end;gap:10px;border-top:1px solid var(--c-border)}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 @keyframes slideUp{from{opacity:0;transform:translateY(12px) scale(.97)}to{opacity:1;transform:none}}
+/* ── Pagination ─────────────────────────────────────────────────────────────── */
+.list-pagination{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 20px;border-top:1px solid var(--c-border);background:var(--c-surface-2)}
+.list-pagination-info{font-size:12px;color:var(--c-text-muted)}
+.list-pagination-actions{display:flex;align-items:center;gap:8px}
+.list-pagination .input{width:auto;min-width:72px;padding:5px 8px;font-size:12px}
+.list-pagination .btn{min-width:72px}
 /* ── Drawer ─────────────────────────────────────────────────────────────────── */
-.drawer-backdrop{position:fixed;inset:0;background:rgba(10,12,20,.36);backdrop-filter:blur(2px);z-index:140}
-.drawer{position:fixed;top:0;right:0;bottom:0;width:min(580px,100vw);background:var(--c-surface);border-left:1px solid var(--c-border);box-shadow:var(--shadow-lg);display:flex;flex-direction:column;animation:slideInRight var(--dur-slow) var(--ease-out)}
+#drawerMount{position:fixed;inset:0;z-index:140;pointer-events:none}
+#drawerMount:empty{display:none}
+.drawer-backdrop{position:absolute;inset:0;background:rgba(10,12,20,.36);backdrop-filter:blur(2px);pointer-events:auto}
+.drawer{position:absolute;top:0;right:0;bottom:0;width:min(580px,100vw);background:var(--c-surface);border-left:1px solid var(--c-border);box-shadow:var(--shadow-lg);display:flex;flex-direction:column;animation:slideInRight var(--dur-slow) var(--ease-out);z-index:1;pointer-events:auto}
 @keyframes slideInRight{from{transform:translateX(100%)}to{transform:translateX(0)}}
 .drawer-head{padding:18px 20px;border-bottom:1px solid var(--c-border);display:flex;align-items:center;justify-content:space-between}
 .drawer-head h2{font-size:15px;font-weight:600}
@@ -481,6 +489,24 @@ details pre{margin-top:6px;font-size:11.5px;font-family:var(--font-mono);backgro
       </div>
       <!-- Mobile cards -->
       <div class="card-list" id="cardList"></div>
+      <!-- Pagination -->
+      <div class="list-pagination" id="listPagination" style="display:none">
+        <span class="list-pagination-info" id="paginationInfo">第 1–50 条，共 0 条</span>
+        <div class="list-pagination-actions">
+          <label class="list-pagination-info" style="display:flex;align-items:center;gap:6px">
+            每页
+            <select class="input" id="pageSizeSelect" onchange="changePageSize(this.value)">
+              <option value="20">20</option>
+              <option value="50" selected>50</option>
+              <option value="100">100</option>
+              <option value="200">200</option>
+            </select>
+          </label>
+          <button class="btn btn-outline btn-sm" id="btnPrevPage" onclick="goPageDelta(-1)">上一页</button>
+          <span class="list-pagination-info" id="paginationPage">第 1 / 1 页</span>
+          <button class="btn btn-outline btn-sm" id="btnNextPage" onclick="goPageDelta(1)">下一页</button>
+        </div>
+      </div>
       <!-- Empty state -->
       <div class="empty-state" id="emptyState" style="display:none">
         <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
@@ -508,6 +534,7 @@ details pre{margin-top:6px;font-size:11.5px;font-family:var(--font-mono);backgro
 
 // ── State ───────────────────────────────────────────────────────────────────
 let _accounts=[], _filter='', _search='', _paused=false, _concurrency=400;
+let _page=1, _pageSize=50, _filteredTotal=0;
 let _inflight=false, _pollTimer=null;
 let _config={site_profile:'A',has_credit_apply:false,has_subjects:true,has_recharge:false};
 const STATUS_LABEL={queued:'排队',running:'进行中',waiting_apply:'等待申请',
@@ -543,19 +570,31 @@ async function refresh(){
   const dot=document.getElementById('loadingDot');
   if(dot) dot.style.display='inline-block';
   try{
-    const params=new URLSearchParams({limit:'500'});
+    const params=new URLSearchParams({
+      limit:String(_pageSize),
+      offset:String((_page-1)*_pageSize),
+    });
     if(_filter) params.set('status',_filter);
     if(_search) params.set('search',_search);
     const df=document.getElementById('dateFrom')?.value;
     const dt=document.getElementById('dateTo')?.value;
     if(df) params.set('date_from', String(Math.floor(new Date(df+'T00:00:00').getTime()/1000)));
     if(dt) params.set('date_to', String(Math.floor(new Date(dt+'T23:59:59').getTime()/1000)));
-    const data=await apiFetch('/api/accounts?'+params);
+    let data=await apiFetch('/api/accounts?'+params);
+    _filteredTotal=data.filtered_total??data.total??(data.items||[]).length;
+    const totalPages=Math.max(1,Math.ceil(_filteredTotal/_pageSize));
+    if(_page>totalPages){
+      _page=totalPages;
+      params.set('offset', String((_page-1)*_pageSize));
+      data=await apiFetch('/api/accounts?'+params);
+    }
     _accounts=data.items||[];
+    _filteredTotal=data.filtered_total??data.total??_accounts.length;
     _paused=data.paused||false;
     _concurrency=data.concurrency_limit||400;
     updateStats(data);
     renderList();
+    updatePagination();
     updateHeader();
   }catch(e){
     window.ui.toast('刷新失败：'+e.message,'danger');
@@ -609,6 +648,17 @@ function updateHeader(){
 }
 
 // ── Render ───────────────────────────────────────────────────────────────────
+const _listMq=window.matchMedia('(max-width:640px)');
+function applyListLayout(){
+  const tableWrap=document.getElementById('tableWrap');
+  const cardList=document.getElementById('cardList');
+  const hasData=!!_accounts.length;
+  const mobile=_listMq.matches;
+  tableWrap.style.display=hasData&&!mobile?'block':'none';
+  cardList.style.display=hasData&&mobile?'flex':'none';
+}
+_listMq.addEventListener('change',()=>{applyListLayout();});
+
 function renderList(){
   const tbody=document.getElementById('tableBody');
   const cardList=document.getElementById('cardList');
@@ -617,8 +667,11 @@ function renderList(){
   const skeleton=document.getElementById('skeleton');
   skeleton.style.display='none';
 
-  document.getElementById('listBadge').textContent=_accounts.length;
-  document.getElementById('toolbarCount').textContent='共 '+_accounts.length+' 条';
+  const start=_filteredTotal?(_page-1)*_pageSize+1:0;
+  const end=_filteredTotal?Math.min(_page*_pageSize,_filteredTotal):0;
+  document.getElementById('listBadge').textContent=_filteredTotal;
+  document.getElementById('toolbarCount').textContent=_filteredTotal
+    ?`第 ${start}–${end} 条，共 ${_filteredTotal} 条`:'共 0 条';
 
   if(!_accounts.length){
     tableWrap.style.display='none';
@@ -628,14 +681,49 @@ function renderList(){
     const sub=document.getElementById('emptySub');
     if(_search){title.textContent='无搜索结果';sub.textContent='没有匹配 "'+_search+'" 的账号';}
     else{title.textContent='暂无账号';sub.textContent='点击上方表单添加，或导入 Excel';}
+    tbody.innerHTML='';
+    cardList.innerHTML='';
+    updatePagination();
     return;
   }
   emptyState.style.display='none';
-  tableWrap.style.display=''; tableWrap.style.opacity='1';
-  cardList.style.display='flex';
+  applyListLayout();
 
   tbody.innerHTML=_accounts.map(a=>rowHtml(a)).join('');
   cardList.innerHTML=_accounts.map(a=>cardHtml(a)).join('');
+}
+
+function updatePagination(){
+  const bar=document.getElementById('listPagination');
+  const info=document.getElementById('paginationInfo');
+  const pageEl=document.getElementById('paginationPage');
+  const prev=document.getElementById('btnPrevPage');
+  const next=document.getElementById('btnNextPage');
+  const sizeSel=document.getElementById('pageSizeSelect');
+  if(!bar) return;
+  const totalPages=Math.max(1,Math.ceil(_filteredTotal/_pageSize));
+  const start=_filteredTotal?(_page-1)*_pageSize+1:0;
+  const end=_filteredTotal?Math.min(_page*_pageSize,_filteredTotal):0;
+  bar.style.display=_filteredTotal>0?'flex':'none';
+  if(info) info.textContent=`第 ${start}–${end} 条，共 ${_filteredTotal} 条`;
+  if(pageEl) pageEl.textContent=`第 ${_page} / ${totalPages} 页`;
+  if(prev) prev.disabled=_page<=1;
+  if(next) next.disabled=_page>=totalPages;
+  if(sizeSel) sizeSel.value=String(_pageSize);
+}
+function goPageDelta(d){
+  const totalPages=Math.max(1,Math.ceil(_filteredTotal/_pageSize));
+  const next=Math.min(totalPages,Math.max(1,_page+d));
+  if(next===_page) return;
+  _page=next;
+  refresh();
+}
+function changePageSize(v){
+  const n=parseInt(v,10);
+  if(!n||n===_pageSize) return;
+  _pageSize=n;
+  _page=1;
+  refresh();
 }
 
 function subjectTags(a){
@@ -747,6 +835,7 @@ function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').
 // ── Filter ───────────────────────────────────────────────────────────────────
 function filterByStatus(s){
   _filter=s;
+  _page=1;
   document.querySelectorAll('#statusFilter button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.val===s?'true':'false'));
   document.querySelectorAll('#statsGrid .stat-tile').forEach(t=>t.dataset.active=(t.dataset.filter===s).toString());
   refresh();
@@ -755,7 +844,7 @@ function setFilter(btn){
   filterByStatus(btn.dataset.val);
 }
 let _debTimer=null;
-function debounceSearch(){_search=document.getElementById('searchInput').value;clearTimeout(_debTimer);_debTimer=setTimeout(refresh,250);}
+function debounceSearch(){_search=document.getElementById('searchInput').value;_page=1;clearTimeout(_debTimer);_debTimer=setTimeout(refresh,250);}
 
 function togglePanel(id){
   const p=document.getElementById(id);
@@ -1000,7 +1089,7 @@ function renderDrawerContent(a){
   const runs=a.runs||[];
   const showCopy=a.status==='failed'||a.status==='retrying'||!!(a.error_log_text);
   const logText=a.error_log_text||'（暂无日志内容）';
-  const copyBtn=showCopy?`<br><button class="btn btn-outline btn-sm" style="margin-top:12px" onclick="copyErrLog(${JSON.stringify(logText)})">
+  const copyBtn=showCopy?`<br><button class="btn btn-outline btn-sm log-copy-btn" style="margin-top:12px">
     <svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="9" height="12" rx="1.5"/><path d="M3 4H2a1 1 0 00-1 1v9a1 1 0 001 1h9a1 1 0 001-1v-1"/></svg>复制日志
   </button>`:'';
 
@@ -1098,6 +1187,8 @@ function renderDrawerContent(a){
     <div id="tab-course" class="tab-pane">${courseRows}</div>
     ${applyPane}
     <div id="tab-history" class="tab-pane">${historyRows}</div>`;
+  const copyBtnEl=document.querySelector('.log-copy-btn');
+  if(copyBtnEl) copyBtnEl.addEventListener('click',()=>copyErrLog(logText));
 }
 function switchTab(btn,paneId){
   btn.closest('.tabs-nav').querySelectorAll('button').forEach(b=>b.setAttribute('aria-selected','false'));

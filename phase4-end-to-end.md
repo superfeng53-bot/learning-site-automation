@@ -25,6 +25,19 @@ When `docs/API_REQUIREMENTS.md` specifies **B — 公需年度型** (`site-profi
 
 Phase 5 worker calls this module in a `for year in account.target_years` loop instead of `CourseRunner.run(project_id)`.
 
+## Site profile B′ — Project task runner (alternative to CourseRunner / YearTaskRunner)
+
+When `docs/API_REQUIREMENTS.md` specifies **B_prime — 项目驱动型** (`site-profiles.md` §B′):
+
+- [ ] `<pkg>/course_plan.py` from `templates/code/api/course_plan.py` — credit-cap planning per project `N_ZXF`
+- [ ] `<pkg>/project_task.py` from `templates/code/runner/project_runner.py` — `ProjectTaskRunner.run_account()`
+- [ ] `CourseService.list_actionable_courses(project_id)` delegates to `plan_actionable_courses()`
+- [ ] `run_course.py` CLI: `--dry-run` lists planned courses only; `--max-study-rounds 1` for single-lesson smoke
+- [ ] `report_mode=fast` shortens study report interval (e.g. 90s → 30s)
+- [ ] **Do not** generate `YearTaskRunner`, `run_year.py`, or `target_years` handling
+
+Phase 5 worker calls `ProjectTaskRunner.run_account()` instead of year loop or `CourseRunner`.
+
 ## Read First
 
 Read `docs/API_REQUIREMENTS.md` and `<pkg>/API_REFERENCE.md` before writing the runner:

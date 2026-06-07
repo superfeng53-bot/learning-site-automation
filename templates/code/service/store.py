@@ -158,10 +158,14 @@ class Store:
             row = conn.execute("SELECT * FROM accounts WHERE username=?", (username,)).fetchone()
             return dict(row) if row else None
 
-    def list_accounts(self, status: str = "", search: str = "",
-                      limit: int = 200, offset: int = 0,
-                      date_from: float = 0, date_to: float = 0) -> list[dict]:
-        sql = "SELECT * FROM accounts WHERE 1=1"
+    @staticmethod
+    def _accounts_filter_sql(
+        status: str = "",
+        search: str = "",
+        date_from: float = 0,
+        date_to: float = 0,
+    ) -> tuple[str, list]:
+        sql = ""
         params: list = []
         if status:
             sql += " AND status=?"
@@ -175,7 +179,28 @@ class Store:
         if date_to > 0:
             sql += " AND updated_at <= ?"
             params.append(date_to)
-        sql += " ORDER BY id ASC LIMIT ? OFFSET ?"
+        return sql, params
+
+    def count_accounts(
+        self,
+        status: str = "",
+        search: str = "",
+        date_from: float = 0,
+        date_to: float = 0,
+    ) -> int:
+        where, params = self._accounts_filter_sql(status, search, date_from, date_to)
+        with self._conn() as conn:
+            row = conn.execute(
+                f"SELECT COUNT(*) AS n FROM accounts WHERE 1=1{where}",
+                params,
+            ).fetchone()
+            return int(row["n"] if row else 0)
+
+    def list_accounts(self, status: str = "", search: str = "",
+                      limit: int = 50, offset: int = 0,
+                      date_from: float = 0, date_to: float = 0) -> list[dict]:
+        where, params = self._accounts_filter_sql(status, search, date_from, date_to)
+        sql = f"SELECT * FROM accounts WHERE 1=1{where} ORDER BY id ASC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
         with self._conn() as conn:
             return [dict(r) for r in conn.execute(sql, params).fetchall()]
