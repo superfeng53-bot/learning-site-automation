@@ -28,7 +28,7 @@ If any of (1)-(4) is missing, ask the user **once** with `AskQuestion` before in
 | 3 | Session reuse, error classification, retry policy | `session_manager.py`, `responses.py`, `captcha_limiter.py` | `phase3-stability.md` |
 | 4 | End-to-end single-account runner | `course_runner.py` + `run_course.py` entry | `phase4-end-to-end.md` |
 | 5 | Multi-account SQLite scheduler + FastAPI web console | `<svc>/orchestrator.py`, `worker.py`, `apply_worker.py`, `web/app.py` | `phase5-service.md` |
-| 6 | One-click start, single-instance (+ reopen WebUI on relaunch), port fallback, single-file build (`{平台}_{MM}_{DD}`, console logs), CI | `start.sh`, `build.sh`, `scripts/build.py`, `.github/workflows/ci.yml` | `phase6-packaging.md` |
+| 6 | One-click start, single-instance (+ reopen WebUI on relaunch), port fallback, single-file build (`{平台}_{MM}_{DD}`, console logs), **packaged smoke (`smoke_frozen.py`)**, CI | `start.sh`, `build.sh`, `scripts/build.py`, `scripts/smoke_frozen.py`, `.github/workflows/ci.yml` | `phase6-packaging.md` |
 
 ## Hard Workflow Rules
 
@@ -60,6 +60,8 @@ At **end of every phase**, the parent agent MUST:
 4. **Phase gate rule**: enter the next phase only when every DoD item is `pass` or `skipped` with documented reason, **and** every gap is either closed or **explicitly accepted** by the user in the same phase-gate message (does **not** consume an extra `AskQuestion` slot — bundle with the normal “OK to enter phase N+1?”).
 
 **Sub-agent rule**: parent agent integrates output only after re-running DoD against the merged tree; never trust “done” from chat alone.
+
+**Phase 6 packaged gate**: `./start.sh` / phase 5 Web UI `pass` **does not** satisfy phase 6. **`scripts/smoke_frozen.py` exit 0** (or documented manual equivalent in `phase6-packaging.md`) is mandatory before phase 6 completion.
 
 **Stable conventions vs transient gaps**: confirmed, long-lived site rules → optional **`create-rule`** after phase 2; open blockers → `docs/gaps/` only, not `.cursor/rules/`.
 
@@ -102,7 +104,7 @@ Use `Task` with `subagent_type=generalPurpose` or `explore`. Copy DoD from the p
 | Phase 5 web UI | Pure presentation | 复制 `templates/code/web/index.html` → 替换占位符 → 按 B/B′/可选能力删减块；验收 `web-ui-spec.md` §12–§13 |
 | Phase 5 service layer | After API confirmed | 复制 `templates/code/service/{store,orchestrator,worker_base,apply_worker,web/app,excel_io}.py` → 实现 `run_pipeline()` → 注入 session_manager |
 | Phase 5 Excel | Formatting rules | `excel_io.py` 模板已含导入/导出；仅在有非标列时借 `spreadsheet` skill 调整 |
-| Phase 6 packaging | Platform quirks | `start.sh`, `build.sh`, PyInstaller spec |
+| Phase 6 packaging | Platform quirks | `start.sh`, `build.sh`, PyInstaller spec, `smoke_frozen.py` |
 
 ### What stays in the parent agent
 
@@ -189,6 +191,7 @@ Bundling **gap acceptance** or **scope cut** into the normal phase-gate confirma
 - Do NOT use emoji in UI text; use plain Chinese labels
 - Do NOT skip `ui.confirm` / `ui.toast` patterns in web UI
 - Do NOT mark a phase complete with unchecked DoD or unaccepted gaps in `docs/gaps/`
+- Do NOT mark phase 6 complete when only dev-mode `./start.sh` works — **`smoke_frozen.py` must pass** on the PyInstaller binary (see `phase6-packaging.md` §Packaged Artifact Smoke Test)
 - Do NOT duplicate full spec checklists in `docs/verification/` — only pass/fail + evidence
 - Do NOT merge sub-agent output without parent re-running DoD on the integrated tree
 
@@ -245,9 +248,11 @@ templates/code/
 │   └── site_adapter_template.py    # SiteAdapter 参考实现（build_plan 已接 account_pipeline）
 ├── api/
 │   └── course_plan.py              # B′ 型：按 N_ZXF 学分上限规划课程
-└── runner/
-    ├── course_runner.py            # CourseRunner（A 型）+ YearTaskRunner（B 型）
-    └── project_runner.py           # ProjectTaskRunner（B′ 型）
+├── runner/
+│   ├── course_runner.py            # CourseRunner（A 型）+ YearTaskRunner（B 型）
+│   └── project_runner.py           # ProjectTaskRunner（B′ 型）
+└── scripts/
+    └── smoke_frozen.py             # Phase 6：打包产物 HTTP + 路径 smoke（复制到项目 scripts/）
 ```
 
 B′ 型 Phase 5 另复制：`service/project_sync.py`（Web 项目进度同步）。
@@ -280,7 +285,8 @@ B′ 型 Phase 5 另复制：`service/project_sync.py`（Web 项目进度同步�
 | `runner/course_runner.py` | 调整阈值与字段名；A 型用 `CourseRunner`；**B 型**用 `YearTaskRunner` |
 | `runner/project_runner.py` | **B′ 型**：复制为 `<pkg>/project_task.py`；`run_account()` 遍历 pending 项目 |
 | `service/project_sync.py` | **B′ 型**：`build_project_status()`；`app.py` 暴露 `POST /api/accounts/{id}/sync-projects` |
-| `run_service.py` | 替换 `<SVC>`/`<PKG>`；传入真实 `session_manager` |
+| `run_service.py` | 替换 `<SVC>`/`<PKG>`；传入真实 `session_manager`；frozen 顶层 `except` + `input()` |
+| `scripts/smoke_frozen.py` | Phase 6 复制到 `scripts/`；`build.py` 成功后 `check_call`；单独跑须 exit 0 |
 
 ### 使用规则
 

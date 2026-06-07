@@ -102,4 +102,12 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        raise SystemExit(main())
+    except Exception:
+        import sys
+        import traceback
+        traceback.print_exc()
+        if getattr(sys, "frozen", False):
+            input("启动失败，按 Enter 退出…")
+        raise

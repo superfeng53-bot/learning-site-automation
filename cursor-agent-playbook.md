@@ -269,7 +269,8 @@ cp ~/.cursor/skills/learning-site-automation/templates/agents/api-recon.md \
 | `<pkg>`/`<svc>` 命名 | captcha.py / login.py |
 | phase gate 与用户确认 | 单个 `*Service` 模块 |
 | 合并 API_REFERENCE | 整页 `index.html` |
-| 跑通 60s 进度探针 + 端到端 smoke test | PyInstaller 打包脚本 |
+| 跑通 60s 进度探针 + 端到端 smoke test | PyInstaller 打包脚本（`build.py` / spec） |
+| **`scripts/smoke_frozen.py` 在 dist 单文件上 pass** | — |
 | 写 handoff + verification report + gaps（如有） | openpyxl 模板生成（在 spreadsheet skill 指导下） |
 | 对照 phase DoD / `web-ui-spec` / `excel-spec` 验收子 agent 产出后再合并 | — |
 
@@ -287,6 +288,7 @@ cp ~/.cursor/skills/learning-site-automation/templates/agents/api-recon.md \
 - ❌ Phase 5 未读 `web-ui-spec.md` / `excel-spec.md` 就开始写 UI 或 xlsx  
 - ❌ 用英文 UI 文案「先跑通再说」  
 - ❌ 导出 Excel 重排导入列顺序  
+- ❌ **阶段 6 仅 `build.sh` 出 dist 未跑 `smoke_frozen.py` 就宣布完成**（开发态 `./start.sh` 通过不能代替打包验收）  
 - ❌ Excel 表头用英文或拼音（如 `username`、`status`、`xingming`）  
 
 ---
