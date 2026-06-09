@@ -111,6 +111,8 @@ a{color:var(--c-primary);text-decoration:none}
 .input{width:100%;padding:8px 11px;border:1.5px solid var(--c-border);border-radius:var(--r-sm);background:var(--c-surface-2);font-size:13.5px;color:var(--c-text);transition:border-color var(--dur-fast) var(--ease),box-shadow var(--dur-fast) var(--ease);outline:none;font-family:inherit}
 .input:focus{border-color:var(--c-primary);background:var(--c-surface);box-shadow:0 0 0 3px var(--c-primary-dim)}
 .input::placeholder{color:var(--c-text-muted)}
+textarea.input.credential-textarea{min-height:72px;resize:vertical;font-family:var(--font-mono);font-size:13px;line-height:1.5}
+.field-hint{display:block;margin-top:5px;font-size:12px;color:var(--c-text-muted);line-height:1.45}
 .input:focus-visible{outline:none}
 .form-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px;flex-wrap:wrap;align-items:center}
 kbd{border:1px solid var(--c-border-strong);border-radius:4px;padding:1px 6px;font-family:var(--font-mono);font-size:11px;background:var(--c-surface-2);color:var(--c-text-muted)}
@@ -348,15 +350,20 @@ details pre{margin-top:6px;font-size:11.5px;font-family:var(--font-mono);backgro
     <div class="panel-body">
       <form id="addForm" onsubmit="submitAddForm(event)">
         <div class="form-grid" id="addFormA">
-          <div class="field">
+          <div class="field field-credential-combined" id="fCredentialWrapA" style="grid-column:1/-1">
+            <label class="field-label" for="fCredentialA">账号密码 <span class="req">*</span></label>
+            <textarea class="input credential-textarea" id="fCredentialA" rows="2" placeholder="粘贴一行或两行，如：zhangsan mima123&#10;或：账号：zhangsan  密码：mima123" autocomplete="off"></textarea>
+            <span class="field-hint">支持：账号/密码、登录名/口令、手机号、帐号/帐户、是/为/等号/括号、【标签】、多行、账号|user|密码|pass 等格式</span>
+          </div>
+          <div class="field field-credential-split" id="fNameWrapA">
             <label class="field-label" for="fName">姓名 <span class="req">*</span></label>
             <input class="input" id="fName" type="text" placeholder="真实姓名" autocomplete="off">
           </div>
-          <div class="field">
+          <div class="field field-credential-split" id="fUserFieldA">
             <label class="field-label" for="fUser">账号 <span class="req">*</span></label>
             <input class="input" id="fUser" type="text" placeholder="登录账号" autocomplete="off">
           </div>
-          <div class="field">
+          <div class="field field-credential-split" id="fPassWrapA">
             <label class="field-label" for="fPass">密码 <span class="req">*</span></label>
             <input class="input" id="fPass" type="password" placeholder="登录密码" autocomplete="off">
           </div>
@@ -394,11 +401,16 @@ details pre{margin-top:6px;font-size:11.5px;font-family:var(--font-mono);backgro
           </div>
         </div>
         <div class="form-grid" id="addFormB" style="display:none">
-          <div class="field">
+          <div class="field field-credential-combined" id="fCredentialWrapB" style="grid-column:1/-1">
+            <label class="field-label" for="fCredentialB">账号密码 <span class="req">*</span></label>
+            <textarea class="input credential-textarea" id="fCredentialB" rows="2" placeholder="粘贴账号密码，如：账号 user01  密码 pass01" autocomplete="off"></textarea>
+            <span class="field-hint">支持多种中文标签与分隔符，见上方说明</span>
+          </div>
+          <div class="field field-credential-split" id="fUserWrapB">
             <label class="field-label" for="fUserB">账号 <span class="req">*</span></label>
             <input class="input" id="fUserB" type="text" placeholder="登录账号" autocomplete="off">
           </div>
-          <div class="field">
+          <div class="field field-credential-split" id="fPassWrapB">
             <label class="field-label" for="fPassB">密码 <span class="req">*</span></label>
             <input class="input" id="fPassB" type="password" placeholder="登录密码" autocomplete="off">
           </div>
@@ -536,10 +548,11 @@ details pre{margin-top:6px;font-size:11.5px;font-family:var(--font-mono);backgro
 let _accounts=[], _filter='', _search='', _paused=false, _concurrency=400;
 let _page=1, _pageSize=50, _filteredTotal=0;
 let _inflight=false, _pollTimer=null;
-let _config={site_profile:'A',has_credit_apply:false,has_subjects:true,has_recharge:false};
+let _config={site_profile:'A',has_credit_apply:false,has_subjects:true,has_recharge:false,credential_input_mode:'split'};
 const STATUS_LABEL={queued:'排队',running:'进行中',waiting_apply:'等待申请',
   retrying:'重试',completed:'已完成',failed:'失败',paused:'已暂停'};
 const isB=()=>_config.site_profile==='B';
+const isCombinedCred=()=>_config.credential_input_mode==='combined';
 
 // ── API ─────────────────────────────────────────────────────────────────────
 async function api(method,path,body){
@@ -805,13 +818,25 @@ function cardHtml(a){
   </div>`;
 }
 
+function applyCredentialInputLayout(){
+  const combined=isCombinedCred();
+  ['A','B'].forEach(s=>{
+    const wrap=document.getElementById('fCredentialWrap'+s);
+    if(wrap) wrap.style.display=combined?'block':'none';
+    document.querySelectorAll('#addForm'+s+' .field-credential-split').forEach(el=>{
+      el.style.display=combined?'none':'block';
+    });
+  });
+}
 function applyLayout(){
   const b=isB();
   document.getElementById('addFormA').style.display=b?'none':'';
   document.getElementById('addFormB').style.display=b?'':'none';
+  applyCredentialInputLayout();
+  const credHint=isCombinedCred()?'；可填「账号密码」一栏或分列':'';
   document.getElementById('uploadHint').textContent=b
-    ?'仅支持 .xlsx；表头须为中文（账号/密码/目标年度…）'
-    :'仅支持 .xlsx；表头须为中文（姓名/账号/密码…）';
+    ?`仅支持 .xlsx；表头须为中文（账号/密码/目标年度…${credHint}）`
+    :`仅支持 .xlsx；表头须为中文（姓名/账号/密码…${credHint}）`;
   const waitTile=document.getElementById('tileWaitApply');
   const waitFilter=document.getElementById('filterWaitApply');
   const showWait=!!_config.has_credit_apply;
@@ -873,8 +898,128 @@ function selectMode(btn){
   btn.setAttribute('aria-pressed','true');
 }
 function focusAddField(){
+  if(isCombinedCred()){
+    document.getElementById(isB()?'fCredentialB':'fCredentialA')?.focus();
+    return;
+  }
   if(isB()) document.getElementById('fUserB')?.focus();
   else document.getElementById('fName')?.focus();
+}
+const CRED_USER_TERMS=['登录账号','登陆账号','登录名','登陆名','用户名称','用户名','手机号码','手机号','电子邮件','账户名','账号名','会员号','账号','帐号','账户','帐户','用户','工号','学号','手机','电话','邮箱','account','username','login','email','mail','user'];
+const CRED_PASS_TERMS=['登录密码','登陆密码','用户密码','账户密码','帐户密码','帐号密码','密码','口令','通行码','password','pwd','pass'];
+const CRED_VAL_SEP='[:：=是为\\-—–|>|→]';
+const CRED_BR_OPEN='[\\[【「《(（]';
+const CRED_BR_CLOSE='[\\]】」》)）]';
+function credEsc(s){return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
+function credLabel(terms){return '(?:'+terms.map(credEsc).join('|')+')';}
+const CRED_USER_L=credLabel(CRED_USER_TERMS);
+const CRED_PASS_L=credLabel(CRED_PASS_TERMS);
+function credClean(v){
+  v=String(v||'').trim().replace(/^["'""'']+|["'""'']+$/g,'');
+  v=v.replace(new RegExp('^'+CRED_BR_OPEN+'+|'+CRED_BR_CLOSE+'+$','g'),'');
+  return v.trim().replace(/^[，,;；.]+|[，,;；.]+$/g,'');
+}
+function credNormSpaces(s){
+  return String(s).replace(/\u3000/g,' ').replace(/\xa0/g,' ').replace(/[，,;；&]+/g,' ').replace(/\s+/g,' ').trim();
+}
+function credInline(raw){return credNormSpaces(raw.replace(/\r\n/g,' ').replace(/\n/g,' '));}
+function credHasExplicitLabel(inline){
+  return new RegExp('(?:^|[\\s])'+CRED_USER_L+'\\s*(?:'+CRED_VAL_SEP+'|[\\s'+CRED_BR_OPEN+'])','i').test(inline)
+    || new RegExp('(?:^|[\\s])'+CRED_PASS_L+'\\s*(?:'+CRED_VAL_SEP+'|[\\s'+CRED_BR_OPEN+'])','i').test(inline);
+}
+function credTryLabeledPair(inline){
+  const pats=[
+    new RegExp(CRED_BR_OPEN+CRED_USER_L+CRED_BR_CLOSE+'\\s*(.+?)\\s*'+CRED_BR_OPEN+CRED_PASS_L+CRED_BR_CLOSE+'\\s*(.+)$','i'),
+    new RegExp(CRED_USER_L+CRED_BR_OPEN+'(.+?)'+CRED_BR_CLOSE+'\\s*'+CRED_PASS_L+CRED_BR_OPEN+'(.+?)'+CRED_BR_CLOSE+'\\s*$','i'),
+    new RegExp(CRED_USER_L+'\\s*'+CRED_VAL_SEP+'\\s*(.+?)'+CRED_PASS_L+'\\s*'+CRED_VAL_SEP+'\\s*(.+)$','i'),
+    new RegExp(CRED_BR_OPEN+'?'+CRED_USER_L+CRED_BR_CLOSE+'?\\s*'+CRED_VAL_SEP+'?\\s*(.+?)\\s+'+CRED_BR_OPEN+'?'+CRED_PASS_L+CRED_BR_CLOSE+'?\\s*'+CRED_VAL_SEP+'?\\s*(.+)$','i'),
+    new RegExp(CRED_USER_L+'\\s+(.+?)\\s+'+CRED_PASS_L+'\\s+(.+)$','i'),
+    new RegExp(CRED_USER_L+'\\s*'+CRED_VAL_SEP+'\\s*(.+?)\\s+'+CRED_PASS_L+'\\s*'+CRED_VAL_SEP+'\\s*(.+)$','i'),
+  ];
+  for(const re of pats){
+    const m=inline.match(re);
+    if(m){const u=credClean(m[1]),p=credClean(m[2]);if(u&&p)return{username:u,password:p};}
+  }
+  return null;
+}
+function credTryMultiline(raw){
+  const lines=raw.split(/[\r\n]+/).map(s=>s.trim()).filter(Boolean);
+  let userVal=null,passVal=null,i=0;
+  while(i<lines.length){
+    const ln=lines[i];
+    function take(labelRe){
+      if(new RegExp('^'+labelRe+'\\s*'+CRED_VAL_SEP+'?\\s*$','i').test(ln)){
+        if(i+1<lines.length){i++;return credClean(lines[i]);}
+        return null;
+      }
+      let m=ln.match(new RegExp('^(?:'+CRED_BR_OPEN+')?'+labelRe+'(?:'+CRED_BR_CLOSE+')?\\s*'+CRED_VAL_SEP+'?\\s*(.+)$','i'));
+      if(m)return credClean(m[1]);
+      m=ln.match(new RegExp('^'+CRED_BR_OPEN+labelRe+CRED_BR_CLOSE+'\\s*'+CRED_VAL_SEP+'?\\s*(.+)$','i'));
+      if(m)return credClean(m[1]);
+      return null;
+    }
+    const u=take(CRED_USER_L);
+    if(u!==null){userVal=u;i++;continue;}
+    const p=take(CRED_PASS_L);
+    if(p!==null){passVal=p;i++;continue;}
+    i++;
+  }
+  if(userVal&&passVal)return{username:userVal,password:passVal};
+  return null;
+}
+function credTryKv(inline){
+  let userVal=null,passVal=null;
+  inline.split(/\s+/).forEach(part=>{
+    let m=part.match(new RegExp('^'+CRED_USER_L+'=(.+)$','i'));
+    if(m){userVal=credClean(m[1]);return;}
+    m=part.match(new RegExp('^'+CRED_PASS_L+'=(.+)$','i'));
+    if(m)passVal=credClean(m[1]);
+  });
+  if(userVal&&passVal)return{username:userVal,password:passVal};
+  return null;
+}
+function credTryPipe(inline){
+  const parts=inline.split('|').map(s=>s.trim());
+  if(parts.length===4&&new RegExp('^'+CRED_USER_L+'$','i').test(parts[0])&&new RegExp('^'+CRED_PASS_L+'$','i').test(parts[2])){
+    const u=credClean(parts[1]),p=credClean(parts[3]);
+    if(u&&p)return{username:u,password:p};
+  }
+  return null;
+}
+function parseCombinedCredentials(text){
+  const raw=String(text||'').trim();
+  if(!raw) throw new Error('请输入账号密码');
+  const inline=credInline(raw);
+  for(const fn of [()=>credTryPipe(inline),()=>credTryLabeledPair(inline),()=>credTryMultiline(raw),()=>credTryKv(inline)]){
+    const r=fn();
+    if(r)return r;
+  }
+  if(!credHasExplicitLabel(inline)){
+    for(const sep of ['：',':']){
+      if(inline.includes(sep)){
+        const i=inline.indexOf(sep);
+        const left=credClean(inline.slice(0,i)),right=credClean(inline.slice(i+1));
+        if(left&&right)return{username:left,password:right};
+      }
+    }
+    if(inline.includes('/')&&inline.split('/').length===2){
+      const [left,right]=inline.split('/');
+      const u=credClean(left),p=credClean(right);
+      if(u&&p&&!u.includes(' ')&&!p.includes(' '))return{username:u,password:p};
+    }
+  }
+  const parts=inline.split(/\s+/);
+  if(parts.length>=2)return{username:parts[0],password:parts.slice(1).join(' ')};
+  throw new Error('无法识别账号和密码，请检查格式');
+}
+function readAddCredentials(isBForm){
+  if(isCombinedCred()){
+    const el=document.getElementById(isBForm?'fCredentialB':'fCredentialA');
+    const parsed=parseCombinedCredentials(el?.value||'');
+    return {username:parsed.username,password:parsed.password,credentials_combined:el?.value?.trim()||''};
+  }
+  if(isBForm) return {username:v('fUserB'),password:v('fPassB'),credentials_combined:''};
+  return {username:v('fUser'),password:v('fPass'),credentials_combined:''};
 }
 async function submitAddForm(e){
   e.preventDefault();
@@ -882,19 +1027,28 @@ async function submitAddForm(e){
   btn.setAttribute('aria-busy','true');
   try{
     if(isB()){
-      const user=v('fUserB'),pass=v('fPassB');
+      let user, pass, credCombined;
+      try{
+        ({username:user,password:pass,credentials_combined:credCombined}=readAddCredentials(true));
+      }catch(err){window.ui.toast(err.message,'warning');return;}
       if(!user||!pass){window.ui.toast('账号和密码为必填','warning');return;}
       const years=[...document.querySelectorAll('#yearPills input:checked')].map(i=>i.value);
       if(!years.length){window.ui.toast('请至少选择一个目标年度','warning');return;}
       const mode=document.querySelector('#modeGroup [aria-pressed="true"]')?.dataset.val||'normal';
       const extra={};
       if(v('fRemarkB')) extra.remark=v('fRemarkB');
-      await api('POST','/api/accounts',{username:user,password:pass,target_years:years,report_mode:mode,extra});
+      const body={username:user,password:pass,target_years:years,report_mode:mode,extra};
+      if(credCombined) body.credentials_combined=credCombined;
+      await api('POST','/api/accounts',body);
       document.getElementById('addForm').reset();
       initYearPills();
-      document.getElementById('fUserB').focus();
+      focusAddField();
     }else{
-      const name=v('fName'),user=v('fUser'),pass=v('fPass');
+      const name=v('fName');
+      let user, pass, credCombined;
+      try{
+        ({username:user,password:pass,credentials_combined:credCombined}=readAddCredentials(false));
+      }catch(err){window.ui.toast(err.message,'warning');return;}
       if(!user||!pass){window.ui.toast('账号和密码为必填','warning');return;}
       const reqs=[];
       const s1=v('fSubject1'),c1=parseFloat(v('fCredit1')||'0');
@@ -905,9 +1059,11 @@ async function submitAddForm(e){
       if(_config.has_recharge&&v('fCard')) extra.card_no=v('fCard');
       if(_config.has_recharge&&v('fCardPwd')) extra.card_password=v('fCardPwd');
       if(v('fRemark')) extra.remark=v('fRemark');
-      await api('POST','/api/accounts',{display_name:name||user,username:user,password:pass,requirements:reqs,extra});
+      const body={display_name:name||user,username:user,password:pass,requirements:reqs,extra};
+      if(credCombined) body.credentials_combined=credCombined;
+      await api('POST','/api/accounts',body);
       document.getElementById('addForm').reset();
-      document.getElementById('fName').focus();
+      focusAddField();
     }
     window.ui.toast('账号已添加','success',2500);
     await refresh();

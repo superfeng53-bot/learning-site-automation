@@ -48,6 +48,7 @@ has_exam    : bool          # 站点是否有考试流程
 has_credit  : bool          # 站点是否有申请学分流程（决定 apply_queue / waiting_apply / ApplyWorker）
 has_recharge: bool          # 是否有购卡/充值
 has_subjects: bool          # 是否需要学科/分类列表（A 型选课用）
+credential_input_mode: "split" | "combined"  # Web 添加账号：两栏 vs 一栏自动识别
 ```
 
 引擎按开关自动裁剪：

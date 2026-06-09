@@ -16,6 +16,7 @@ Goal: produce `docs/LOGIN_FLOW.md` and a working `<pkg>/login.py` that logs in w
 Run the scaffolder once. It creates the project root, `<pkg>/`, `data/`, `docs/`, `.gitignore`, `requirements.txt`, and writes `data/account.json` with the test credentials.
 
 ```bash
+# 分两栏（默认）
 python ~/.cursor/skills/learning-site-automation/scripts/init_project.py \
   --root <project_root> \
   --pkg <pkg_name> \
@@ -23,7 +24,18 @@ python ~/.cursor/skills/learning-site-automation/scripts/init_project.py \
   --site-url <site_url> \
   --username <test_username> \
   --password <test_password>
+
+# 一栏粘贴（自动识别账号/密码）
+python ~/.cursor/skills/learning-site-automation/scripts/init_project.py \
+  --root <project_root> \
+  --pkg <pkg_name> \
+  --svc <svc_name> \
+  --site-url <site_url> \
+  --credential-input-mode combined \
+  --credentials "账号 <test_username> 密码 <test_password>"
 ```
+
+`--credentials` 支持空格、`:`、`账号`/`密码` 标签等混合格式（见 `scripts/credential_parser.py`）。
 
 If `<pkg_name>` is unclear, derive from the site: e.g. `www.sww.com.cn` → `sww_api`, `www.example.com` → `ex_api`.
 

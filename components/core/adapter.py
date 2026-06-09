@@ -24,10 +24,15 @@ class Capabilities:
     has_credit: bool = False      # 是否有申请学分流程 → apply_queue / waiting_apply / ApplyWorker
     has_recharge: bool = False    # 是否有购卡 / 充值
     has_subjects: bool = False    # 是否需要学科 / 分类列表（A 型选课匹配用）
+    credential_input_mode: str = "split"  # "split" 账号+密码两栏 | "combined" 一栏自动识别
 
     def __post_init__(self) -> None:
         if self.profile not in ("A", "B"):
             raise ValueError(f"profile must be 'A' or 'B', got {self.profile!r}")
+        mode = (self.credential_input_mode or "split").strip().lower()
+        if mode not in ("split", "combined"):
+            raise ValueError(f"credential_input_mode must be 'split' or 'combined', got {mode!r}")
+        self.credential_input_mode = mode
         if self.profile == "B":
             # B 型公需年度：无申请、无学科规划
             self.has_credit = False

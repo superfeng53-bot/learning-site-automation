@@ -21,6 +21,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
+from ..credential_parser import CredentialParseError, parse_combined_credentials
 from ..error_log import build_error_log_text
 
 PLATFORM = "<PLATFORM>"   # TODO：替换为实际平台中文名
@@ -52,6 +53,35 @@ def _site_profile(request: Request) -> str:
 
 def _has_credit_apply(request: Request) -> bool:
     return bool(getattr(request.app.state, "has_credit_apply", False))
+
+
+def _credential_input_mode(request: Request) -> str:
+    mode = getattr(request.app.state, "credential_input_mode", "split") or "split"
+    mode = str(mode).strip().lower()
+    return mode if mode in ("split", "combined") else "split"
+
+
+def _resolve_credentials(
+    request: Request,
+    *,
+    username: str,
+    password: str,
+    credentials_combined: str = "",
+) -> tuple[str, str]:
+    user = (username or "").strip()
+    pwd = (password or "").strip()
+    combined = (credentials_combined or "").strip()
+    if user and pwd:
+        return user, pwd
+    if combined:
+        try:
+            parsed = parse_combined_credentials(combined)
+        except CredentialParseError as exc:
+            raise HTTPException(400, detail=str(exc)) from exc
+        return parsed.username, parsed.password
+    if _credential_input_mode(request) == "combined":
+        raise HTTPException(400, detail="请输入账号密码（一栏粘贴）")
+    raise HTTPException(400, detail="账号和密码为必填")
 
 
 def _safe_account(d: dict, store=None, *, include_error_log: bool = True) -> dict:
@@ -100,6 +130,7 @@ async def get_config(request: Request):
         "has_credit_apply": _has_credit_apply(request),
         "has_subjects": profile == "A",
         "has_recharge": bool(getattr(request.app.state, "has_recharge", False)),
+        "credential_input_mode": _credential_input_mode(request),
     }
 
 
@@ -159,8 +190,9 @@ async def sync_account_projects(account_id: int, request: Request):
 
 class CreateAccountBody(BaseModel):
     display_name: str = ""
-    username: str
-    password: str
+    username: str = ""
+    password: str = ""
+    credentials_combined: str = ""  # combined 模式：一栏粘贴，服务端二次解析
     requirements: list[dict] = []   # A 型
     target_years: list[str] = []    # B 型
     report_mode: str = "normal"     # B 型
@@ -171,8 +203,14 @@ class CreateAccountBody(BaseModel):
 async def create_account(body: CreateAccountBody, request: Request):
     store = get_store(request)
     profile = _site_profile(request)
-    if store.get_account_by_username(body.username):
-        raise HTTPException(400, detail=f"账号 {body.username} 已存在")
+    username, password = _resolve_credentials(
+        request,
+        username=body.username,
+        password=body.password,
+        credentials_combined=body.credentials_combined,
+    )
+    if store.get_account_by_username(username):
+        raise HTTPException(400, detail=f"账号 {username} 已存在")
     extra = dict(body.extra)
     if body.report_mode and body.report_mode != "normal":
         extra["report_mode"] = body.report_mode
@@ -180,11 +218,11 @@ async def create_account(body: CreateAccountBody, request: Request):
     if profile == "B":
         display = ""  # B 型登录后从站点回填姓名
     elif not display:
-        display = body.username
+        display = username
     acc_id = store.create_account(
         display_name=display,
-        username=body.username,
-        password=body.password,
+        username=username,
+        password=password,
         requirements_json=json.dumps(body.requirements, ensure_ascii=False),
         target_years_json=json.dumps(body.target_years, ensure_ascii=False),
         extra_json=json.dumps(extra, ensure_ascii=False),
@@ -200,7 +238,11 @@ async def upload_accounts(request: Request, file: UploadFile = File(...)):
     excel_io = get_excel(request)
     data = await file.read()
     site_profile = _site_profile(request)
-    result = excel_io.parse_import_xlsx(data, site_profile=site_profile)
+    result = excel_io.parse_import_xlsx(
+        data,
+        site_profile=site_profile,
+        credential_input_mode=_credential_input_mode(request),
+    )
 
     added = skipped = failed = 0
     errors = list(result.errors)
@@ -379,7 +421,10 @@ async def resume_scheduler(request: Request):
 async def download_template(request: Request):
     excel_io = get_excel(request)
     site_profile = _site_profile(request)
-    data = excel_io.build_template_xlsx(site_profile=site_profile)
+    data = excel_io.build_template_xlsx(
+        site_profile=site_profile,
+        credential_input_mode=_credential_input_mode(request),
+    )
     filename = f"{PLATFORM}账号模板.xlsx"
     return StreamingResponse(
         BytesIO(data),
@@ -399,7 +444,11 @@ async def export_accounts(request: Request):
         acc["last_run_result"] = runs[0]["result"] if runs else ""
         apply_err = store.latest_apply_error(acc["id"]) if hasattr(store, "latest_apply_error") else ""
         acc["error_log_text"] = build_error_log_text(acc, runs=runs, apply_last_error=apply_err)
-    data = excel_io.build_export_xlsx(accounts, site_profile=site_profile)
+    data = excel_io.build_export_xlsx(
+        accounts,
+        site_profile=site_profile,
+        credential_input_mode=_credential_input_mode(request),
+    )
     import datetime
     now_str = datetime.datetime.now().strftime("%Y%m%d_%H%M")
     filename = f"{PLATFORM}账号导出_{now_str}.xlsx"

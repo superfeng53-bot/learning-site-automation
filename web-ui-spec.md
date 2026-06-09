@@ -355,11 +355,24 @@ cursor pointer（折叠时）
 .input::placeholder { color: var(--c-text-muted); }
 ```
 
-**Excel 上传区 `.upload-zone`**：虚线 border `2px dashed var(--c-border-strong)`，圆角 `var(--r-md)`，`padding 20px`，居中；拖拽悬停时 border 变 primary，背景 `var(--c-primary-soft)`，有 `dragover / dragleave` 事件。上传文件须符合 **`excel-spec.md`**：Sheet 名与表头字段名**全部中文**（姓名、账号、密码…），禁止英文列名。
+**Excel 上传区 `.upload-zone`**：虚线 border `2px dashed var(--c-border-strong)`，圆角 `var(--r-md)`，`padding 20px`，居中；拖拽悬停时 border 变 primary，背景 `var(--c-primary-soft)`，有 `dragover / dragleave` 事件。上传文件须符合 **`excel-spec.md`**：Sheet 名与表头字段名**全部中文**（姓名、账号、密码…）；`credential_input_mode=combined` 时模板含「账号密码」列，导入可只填该列。禁止英文列名。
+
+**凭证输入模式**（`credential_input_mode`，创建项目时选定，写入 `data/account.json` 与 `run_service.py` 的 `CREDENTIAL_INPUT_MODE`）：
+
+| 模式 | 值 | 添加面板 |
+|------|-----|----------|
+| 分两栏（默认） | `split` | 账号、密码各一个 `input` |
+| 一栏粘贴 | `combined` | 单个 `textarea`（`.credential-textarea`），提交前自动解析账号/密码 |
+
+`combined` 模式须支持粘贴含中文/英文标签的文本（登录名、手机号、工号、帐号/帐户、是/为/等号/括号、【标签】、多行、`|` 四段式等）。解析逻辑与 `credential_parser.parse_combined_credentials` 一致；前端 `parseCombinedCredentials()` 与之对齐，后端 `POST /api/accounts` 接受 `credentials_combined` 并二次校验。
+
+一栏模式下 **隐藏** 账号/密码分栏，**保留** 姓名（A 型）/ 备注 / 学科 / 年度等业务字段。编辑重学模态仍用「密码（空则不修改）」单栏，不强制 combined。
+
+`GET /api/config` 返回 `credential_input_mode: "split" | "combined"`。
 
 **表单字段标签**（与 Excel 导入列对齐，全部中文）：
 
-- **Site profile A（默认）**：姓名、账号、密码、学科1、学分1、学科2、学分2、卡号、卡号密码、备注。
+- **Site profile A（默认）**：姓名、账号、密码（或 combined 一栏）、学科1、学分1、学科2、学分2、卡号、卡号密码、备注。
 - **Site profile B（公需年度型）**：见 §14；**不展示**学科/学分/卡号业务字段（除非 gap 明确混合站点）。
 
 字段显示必须跟 `docs/API_REQUIREMENTS.md` 中的 **`site_profile`** 对齐：A 型下学科/学分仅在需要按学科选课时出现；卡号仅在 `购卡 / 充值` 被选择时出现。B 型下以 **目标年度** 为必填业务字段（至少选当前年）。为了兼容 Excel round-trip，后端可继续接受空列，但 UI 不应把未选择能力展示成必填需求。
@@ -819,8 +832,7 @@ function recentFiveYears() {
 
 | 字段 | 控件 | 说明 |
 |------|------|------|
-| 账号 | `input` | 必填 |
-| 密码 | `input type=password` | 必填 |
+| 账号 + 密码 | `split`：两个 `input`；`combined`：一栏 `textarea`（§6.5） | 必填 |
 | 备注 | `input` | 可选 |
 | 目标年度 | `.year-pills` 多选 | 见 §14.1 |
 | 任务模式 | `radio` 或 segmented | `标准`（normal）/ `快速`（fast），默认标准 |
@@ -861,8 +873,7 @@ function recentFiveYears() {
 
 | 字段 | 控件 | 说明 |
 |------|------|------|
-| 账号 | `input` | 必填 |
-| 密码 | `input type=password` | 必填 |
+| 账号 + 密码 | `split`：两个 `input`；`combined`：一栏 `textarea`（§6.5） | 必填 |
 | 备注 | `input` | 可选 |
 | 任务模式 | `radio` 或 segmented | `标准`（normal）/ `快速`（fast），默认标准 |
 

@@ -15,6 +15,11 @@ from dataclasses import dataclass
 from typing import Any
 
 import openpyxl
+
+try:
+    from ..credential_parser import CredentialParseError, parse_combined_credentials
+except ImportError:
+    from .credential_parser import CredentialParseError, parse_combined_credentials
 from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 
@@ -26,10 +31,23 @@ IMPORT_COLS = [
     "卡号", "卡号密码", "备注",
 ]
 
+# 一栏凭证列（combined 模式插入在姓名/账号之前）
+COMBINED_CRED_COL = "账号密码"
+
+A_IMPORT_COLS_COMBINED = [
+    "姓名", COMBINED_CRED_COL, "账号", "密码",
+    "学科1", "学分1", "学科2", "学分2",
+    "卡号", "卡号密码", "备注",
+]
+
 # ── B 型列定义（公需年度型）─ 替换上面的 IMPORT_COLS ──────────────────────────
 
 B_IMPORT_COLS = [
     "账号", "密码", "备注", "目标年度", "任务模式",
+]
+
+B_IMPORT_COLS_COMBINED = [
+    COMBINED_CRED_COL, "账号", "密码", "备注", "目标年度", "任务模式",
 ]
 
 # ── 导出追加列（状态/日志等）─────────────────────────────────────────────────
@@ -55,6 +73,45 @@ def _current_year_str() -> str:
     from datetime import datetime
     from zoneinfo import ZoneInfo
     return str(datetime.now(tz=ZoneInfo("Asia/Shanghai")).year)
+
+
+def import_cols_for(site_profile: str = "A", credential_input_mode: str = "split") -> list[str]:
+    """按 site_profile 与凭证输入模式返回导入/导出前半段列顺序。"""
+    profile = site_profile.upper()
+    combined = (credential_input_mode or "split").strip().lower() == "combined"
+    if profile == "B":
+        return B_IMPORT_COLS_COMBINED if combined else B_IMPORT_COLS
+    return A_IMPORT_COLS_COMBINED if combined else IMPORT_COLS
+
+
+def format_combined_credential(username: str, password: str) -> str:
+    """导出用：生成可再次导入解析的一栏凭证文本。"""
+    user = (username or "").strip()
+    pwd = (password or "").strip()
+    if not user:
+        return ""
+    if pwd:
+        return f"账号 {user} 密码 {pwd}"
+    return f"账号 {user}"
+
+
+def resolve_credentials_from_row(
+    username: str,
+    password: str,
+    combined: str = "",
+) -> tuple[str, str]:
+    """从分列或一栏列解析账号密码；分列均有值时优先分列。"""
+    user = (username or "").strip()
+    pwd = (password or "").strip()
+    comb = (combined or "").strip()
+    if user and pwd:
+        return user, pwd
+    if comb:
+        parsed = parse_combined_credentials(comb)
+        return parsed.username, parsed.password
+    if user or pwd:
+        raise CredentialParseError("账号和密码须同时填写，或改填「账号密码」一栏")
+    raise CredentialParseError("账号和密码不能均为空")
 
 
 def _resolve_header_col(header: list[str], names: tuple[str, ...]) -> int | None:
@@ -89,10 +146,11 @@ def _apply_style(cell, **kwargs):
 def build_template_xlsx(
     import_cols: list[str] | None = None,
     site_profile: str = "A",
+    credential_input_mode: str = "split",
 ) -> bytes:
     """生成 {PLATFORM_NAME}账号模板.xlsx，含账号列表 + 填写说明两个 Sheet。"""
     if import_cols is None:
-        cols = B_IMPORT_COLS if site_profile.upper() == "B" else IMPORT_COLS
+        cols = import_cols_for(site_profile, credential_input_mode)
     else:
         cols = import_cols
     wb = openpyxl.Workbook()
@@ -117,21 +175,35 @@ def build_template_xlsx(
 
     # Sheet2：填写说明
     ws2 = wb.create_sheet("填写说明")
+    combined = COMBINED_CRED_COL in cols
     if site_profile.upper() == "B":
         notes = [
             ("说明", "内容"),
             ("表头", "不可改字、不可调列顺序"),
-            ("必填列", "账号、密码"),
+            ("必填列", "账号+密码（分列填写），或仅填「账号密码」一栏（自动识别）"),
+            *(
+                [("账号密码", "可粘贴「账号 xxx 密码 yyy」或 user pass；与分列二选一")]
+                if combined else []
+            ),
             ("目标年度", "可多选，用顿号或逗号分隔；不填则默认当前自然年"),
             ("任务模式", "标准 或 快速（可选，默认标准）"),
-            ("示例", "zhangsan@example.com / （密码）/ 备注 / 2026,2025 / 标准"),
+            (
+                "示例",
+                "账号 zhangsan 密码 （示例） / zhangsan@example.com / / 备注 / 2026,2025 / 标准"
+                if combined
+                else "zhangsan@example.com / （密码）/ 备注 / 2026,2025 / 标准",
+            ),
             ("重复账号", "重复账号自动跳过，不会覆盖"),
         ]
     else:
         notes = [
             ("说明", "内容"),
             ("表头", "不可改字、不可调列顺序"),
-            ("必填列", "账号、密码"),
+            ("必填列", "账号+密码（分列填写），或仅填「账号密码」一栏（自动识别）"),
+            *(
+                [("账号密码", "可粘贴「账号 xxx 密码 yyy」或 user pass；与分列二选一")]
+                if combined else []
+            ),
             ("学科", "学科与学分成对填写；学分支持 0.5；未启用学科需求可留空"),
             ("卡号", "仅站点支持购卡/充值时填写"),
             ("重复账号", "重复账号自动跳过，不会覆盖"),
@@ -151,6 +223,7 @@ def build_template_xlsx(
 def _get_sample_row(cols: list[str]) -> list[str]:
     mapping = {
         "姓名": "张三",
+        COMBINED_CRED_COL: "账号 zhangsan@example.com 密码 （示例密码）",
         "账号": "zhangsan@example.com",
         "密码": "（示例密码）",
         "学科1": "内科学",
@@ -189,7 +262,11 @@ class ImportResult:
     errors: list[dict]  # {"row": int, "reason": str}
 
 
-def parse_import_xlsx(data: bytes, site_profile: str = "A") -> ImportResult:
+def parse_import_xlsx(
+    data: bytes,
+    site_profile: str = "A",
+    credential_input_mode: str = "split",
+) -> ImportResult:
     """
     解析导入文件。
     site_profile: "A"（学科规划型）或 "B"（公需年度型）
@@ -236,13 +313,17 @@ def parse_import_xlsx(data: bytes, site_profile: str = "A") -> ImportResult:
         def v(name: str, default: str = "") -> str:
             return v_at(col(name), default)
 
+        combined_raw = v(COMBINED_CRED_COL) if col(COMBINED_CRED_COL) is not None else ""
+
         if site_profile == "B":
             username = v("账号")
-            if not username:
-                continue
             password = v("密码")
-            if not password:
-                errors.append({"row": ri, "reason": "密码不能为空"})
+            if not username and not password and not combined_raw:
+                continue
+            try:
+                username, password = resolve_credentials_from_row(username, password, combined_raw)
+            except CredentialParseError as exc:
+                errors.append({"row": ri, "reason": str(exc)})
                 continue
             remark = v("备注")
             yi = _resolve_header_col(header, B_YEAR_HEADER_ALIASES)
@@ -269,11 +350,13 @@ def parse_import_xlsx(data: bytes, site_profile: str = "A") -> ImportResult:
             ))
         else:
             username = v("账号")
-            if not username:
-                continue
             password = v("密码")
-            if not password:
-                errors.append({"row": ri, "reason": "密码不能为空"})
+            if not username and not password and not combined_raw:
+                continue
+            try:
+                username, password = resolve_credentials_from_row(username, password, combined_raw)
+            except CredentialParseError as exc:
+                errors.append({"row": ri, "reason": str(exc)})
                 continue
             display_name = v("姓名", "")
             remark = v("备注")
@@ -320,13 +403,17 @@ def parse_import_xlsx(data: bytes, site_profile: str = "A") -> ImportResult:
 
 # ── 导出 ──────────────────────────────────────────────────────────────────────
 
-def build_export_xlsx(accounts: list[dict], site_profile: str = "A",
-                      import_cols: list[str] | None = None) -> bytes:
+def build_export_xlsx(
+    accounts: list[dict],
+    site_profile: str = "A",
+    import_cols: list[str] | None = None,
+    credential_input_mode: str = "split",
+) -> bytes:
     """
     导出：前 N 列与导入模板完全一致；后追加状态/日志等系统列。
-    accounts: list of dict（来自 API 层，已脱敏，密码字段为空或已移除）
+    accounts: list of dict（须含 username；combined 模式须含 password 以填充「账号密码」列）
     """
-    cols = import_cols or (IMPORT_COLS if site_profile.upper() == "A" else B_IMPORT_COLS)
+    cols = import_cols or import_cols_for(site_profile, credential_input_mode)
     extra_cols = EXPORT_EXTRA_COLS if site_profile.upper() == "A" else B_EXPORT_EXTRA_COLS
     all_cols = cols + extra_cols
 
@@ -356,11 +443,18 @@ def build_export_xlsx(accounts: list[dict], site_profile: str = "A",
         reqs = json.loads(acc.get("requirements_json") or "[]")
         target_years = json.loads(acc.get("target_years_json") or "[]")
 
+        username = acc.get("username", "") or ""
+        password_plain = acc.get("password", "") or ""
         row_data: dict[str, Any] = {
             "姓名": acc.get("display_name", "") or extra.get("real_name", ""),
             "身份证": extra.get("id_card", ""),
-            "账号": acc.get("username", ""),
+            "账号": username,
             "密码": "",
+            COMBINED_CRED_COL: (
+                format_combined_credential(username, password_plain)
+                if COMBINED_CRED_COL in cols
+                else ""
+            ),
             "备注": extra.get("remark", ""),
             "卡号": extra.get("card_no", ""),
             "卡号密码": "",

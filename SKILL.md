@@ -15,9 +15,10 @@ Before starting, confirm you have:
 2. **Test credentials** (one working username + password)
 3. **Domain goal** in one sentence (e.g. "刷视频课 + 自动考试 + 申请学分")
 4. **Project root path** (absolute path on disk where the codebase will live)
-5. (Optional) A requirements doc; if absent, use `templates/requirements.md` as the baseline.
+5. **Credential input mode** — `split`（账号、密码分两栏，默认）或 `combined`（一栏粘贴，自动识别「账号」「密码」等字样）；写入 `data/account.json` 的 `credential_input_mode`，phase 5 同步到 `CREDENTIAL_INPUT_MODE` / Web UI。
+6. (Optional) A requirements doc; if absent, use `templates/requirements.md` as the baseline.
 
-If any of (1)-(4) is missing, ask the user **once** with `AskQuestion` before invoking phase 1.
+If any of (1)-(4) is missing, ask the user **once** with `AskQuestion` before invoking phase 1. Bundle **credential input mode** into that same question when credentials are provided as a single pasted line.
 
 ## The 6 Phases
 
@@ -49,7 +50,7 @@ Close the loop without duplicating existing checklists. **Authoritative sources*
 | Scope | Checklist lives in |
 |-------|-------------------|
 | Phases 1–4, 6 | `phaseN-*.md` → Definition of Done |
-| Phase 5 Web UI | `web-ui-spec.md` §12–§13 |
+| Phase 5 Web UI | `web-ui-spec.md` §12–§13、§16（批量操作） |
 | Phase 5 Excel | `excel-spec.md` §6 |
 
 At **end of every phase**, the parent agent MUST:
@@ -101,7 +102,7 @@ Use `Task` with `subagent_type=generalPurpose` or `explore`. Copy DoD from the p
 | Phase 1 captcha + login | Finicky iteration | Implement `captcha.py` + `login.py` from draft path |
 | Phase 2 API discovery | Per-domain network dumps | One explore agent → `docs/api-discovery/<domain>.md` (max 2 domains each) |
 | Phase 2 service module | Parallel-friendly | One generalPurpose agent per `*Service` + `cli_*.py` |
-| Phase 5 web UI | Pure presentation | 复制 `templates/code/web/index.html` → 替换占位符 → 按 B/B′/可选能力删减块；验收 `web-ui-spec.md` §12–§13 |
+| Phase 5 web UI | Pure presentation | 复制 `templates/code/web/index.html` → 替换占位符 → 按 B/B′/可选能力删减块 → 实现 §16 批量选择/重学/删除；验收 `web-ui-spec.md` §12–§13、§16 |
 | Phase 5 service layer | After API confirmed | 复制 `templates/code/service/{store,orchestrator,worker_base,apply_worker,web/app,excel_io}.py` → 实现 `run_pipeline()` → 注入 session_manager |
 | Phase 5 Excel | Formatting rules | `excel_io.py` 模板已含导入/导出；仅在有非标列时借 `spreadsheet` skill 调整 |
 | Phase 6 packaging | Platform quirks | `start.sh`, `build.sh`, PyInstaller spec, `smoke_frozen.py` |
@@ -155,7 +156,7 @@ These apply to every generated project unless the user explicitly opts out:
 |---------|------|
 | Web 控制台 | 全部简体中文；见 `web-ui-spec.md` §0 |
 | Excel 模板 | 文件名 `{平台}账号模板.xlsx`；Sheet 名与表头字段名**全部中文**；见 `excel-spec.md` §2 |
-| Excel 导入 | 只解析中文表头（姓名/账号/密码/学科1…）；错误提示中文；见 `excel-spec.md` §2 |
+| Excel 导入 | 只解析中文表头（姓名/账号/密码/学科1…）；`combined` 模式含「账号密码」一栏并可自动解析；见 `excel-spec.md` §2 |
 | Excel 导出 | 前 A–J 列与导入模板完全一致；状态/日志等中文列追加在后；见 `excel-spec.md` §3 |
 | 复制日志 | 失败/重试账号一键复制 `error_log_text`；见 `web-ui-spec.md` §4.12 + `excel-spec.md` §4 |
 | 启动与打包 | 一键启动、单实例、二次启动只开 WebUI、端口避让、单文件 PyInstaller、`{平台}_{月}_{日}` 命名、`console=True`；见 `phase5-service.md` + `phase6-packaging.md` |

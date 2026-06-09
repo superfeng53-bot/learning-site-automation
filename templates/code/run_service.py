@@ -29,6 +29,7 @@ DEFAULT_PORT = 17865
 SITE_PROFILE = "A"   # TODO: "A" 或 "B"
 HAS_CREDIT_APPLY = False  # TODO: 站点有申请学分流程时 True
 HAS_RECHARGE = False      # TODO: 站点有购卡/充值时 True
+CREDENTIAL_INPUT_MODE = "split"  # TODO: "split" 或 "combined"（与 data/account.json 一致）
 
 
 def main():
@@ -78,10 +79,11 @@ def main():
     app.state.store            = store
     app.state.orch             = orch
     app.state.excel_io         = excel_io
-    app.state.site_profile     = SITE_PROFILE
-    app.state.has_credit_apply = HAS_CREDIT_APPLY
-    app.state.has_recharge     = HAS_RECHARGE
-    app.state.recharge_handler = None  # TODO: callable(acc_dict, card_no, card_pwd) -> dict
+    app.state.site_profile          = SITE_PROFILE
+    app.state.has_credit_apply      = HAS_CREDIT_APPLY
+    app.state.has_recharge          = HAS_RECHARGE
+    app.state.credential_input_mode = CREDENTIAL_INPUT_MODE
+    app.state.recharge_handler      = None  # TODO: callable(acc_dict, card_no, card_pwd) -> dict
 
     # ── 端口 & 元数据 ─────────────────────────────────────────────────────────
     port = find_available_port(args.host, args.port)

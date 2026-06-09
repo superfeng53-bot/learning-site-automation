@@ -21,6 +21,7 @@ CAPABILITIES = Capabilities(
     has_credit=False,     # 是否有申请学分（决定 apply_queue / waiting_apply / ApplyWorker）
     has_recharge=False,   # 是否有购卡/充值
     has_subjects=False,   # 是否需要学科/分类列表
+    credential_input_mode="split",  # "split" 两栏 | "combined" 一栏（见 data/account.json）
 )
 
 

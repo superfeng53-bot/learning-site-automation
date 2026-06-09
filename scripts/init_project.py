@@ -2,7 +2,9 @@
 
 Usage:
     python init_project.py --root <abs_path> --pkg <pkg_name> --svc <svc_name> \
-        --site-url <url> --username <test_user> --password <test_pwd> \
+        --site-url <url> \
+        (--username <test_user> --password <test_pwd> | --credentials <combined>) \
+        [--credential-input-mode split|combined] \
         [--platform <display_name>]
 
 Creates the directory tree described in templates/project-skeleton.md, plus
@@ -15,6 +17,12 @@ import argparse
 import json
 import sys
 from pathlib import Path
+
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+
+from credential_parser import CredentialParseError, parse_combined_credentials
 
 
 GITIGNORE = """\
@@ -326,20 +334,66 @@ def write_if_missing(path: Path, content: str) -> bool:
     return True
 
 
+def _resolve_test_credentials(args: argparse.Namespace) -> tuple[str, str, str]:
+    """Return (username, password, credential_input_mode)."""
+    mode = (args.credential_input_mode or "split").strip().lower()
+    if mode not in ("split", "combined"):
+        print("error: --credential-input-mode must be split or combined", file=sys.stderr)
+        raise SystemExit(2)
+
+    if args.credentials:
+        try:
+            parsed = parse_combined_credentials(args.credentials)
+        except CredentialParseError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            raise SystemExit(2) from exc
+        return parsed.username, parsed.password, mode
+
+    if not args.username or not args.password:
+        print(
+            "error: provide --username + --password, or --credentials for combined input",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+    return args.username, args.password, mode
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", required=True, help="absolute project root path")
     ap.add_argument("--pkg", required=True, help="api package name, e.g. sww_api")
     ap.add_argument("--svc", required=True, help="service package name, e.g. sww_service")
     ap.add_argument("--site-url", required=True, help="login URL")
-    ap.add_argument("--username", required=True, help="test username")
-    ap.add_argument("--password", required=True, help="test password")
+    ap.add_argument("--username", default="", help="test username (split mode)")
+    ap.add_argument("--password", default="", help="test password (split mode)")
+    ap.add_argument(
+        "--credentials",
+        default="",
+        help="single-field test credentials; auto-parses 账号/密码 labels",
+    )
+    ap.add_argument(
+        "--credential-input-mode",
+        choices=("split", "combined"),
+        default="split",
+        help="UI/Excel credential entry style: split=账号+密码两栏, combined=一栏自动识别",
+    )
     ap.add_argument("--platform", default="", help="display name for the platform")
     args = ap.parse_args()
+
+    username, password, credential_input_mode = _resolve_test_credentials(args)
 
     root = Path(args.root).expanduser().resolve()
     platform = args.platform or args.pkg.split("_")[0].upper()
     project_name = root.name
+    skill_root = _SCRIPT_DIR.parent
+    credential_parser_src = skill_root / "components" / "core" / "credential_parser.py"
+    if not credential_parser_src.is_file():
+        credential_parser_src = _SCRIPT_DIR / "credential_parser.py"
+    credential_parser_py = (
+        credential_parser_src.read_text(encoding="utf-8")
+        if credential_parser_src.is_file()
+        else ""
+    )
 
     if root.exists() and any(root.iterdir()):
         print(f"warning: {root} is not empty, will only fill missing files", file=sys.stderr)
@@ -357,8 +411,9 @@ def main() -> None:
         (root / "data" / "account.json", json.dumps({
             "platform": platform,
             "site_url": args.site_url,
-            "username": args.username,
-            "password": args.password,
+            "username": username,
+            "password": password,
+            "credential_input_mode": credential_input_mode,
             "notes": "Test account for local development only. Gitignored.",
         }, ensure_ascii=False, indent=2)),
         (root / "docs" / ".gitkeep", ""),
@@ -382,6 +437,9 @@ def main() -> None:
         (root / f"{args.pkg.replace('_api', '_login')}.py" if args.pkg.endswith("_api") else root / f"{args.pkg}_login.py",
          f"from {args.pkg}.cli_login import main\nif __name__ == '__main__':\n    main()\n"),
     ]
+
+    if credential_parser_py:
+        targets.append((root / args.pkg / "credential_parser.py", credential_parser_py))
 
     for path, content in targets:
         rel = path.relative_to(root)
