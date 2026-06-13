@@ -281,7 +281,7 @@ B′ 型 Phase 5 另复制：`service/project_sync.py`（Web 项目进度同步�
 | `worker_base.py` | A 型实现 `run_pipeline()`；B 型实现 `run_year_pipeline()`（`run_once` 已内置按年循环） |
 | `apply_worker.py` | 继承 `ApplyWorkerBase`，实现 `do_apply_credit(client, project_id, task)` |
 | `web/app.py` | 替换 `PLATFORM`/`LOGO_LETTER`；`run_service.py` 中注入 `app.state.store/orch/excel_io` |
-| `web/excel_io.py` | A 型保持默认；B 型将 `IMPORT_COLS` 替换为 `B_IMPORT_COLS` |
+| `web/excel_io.py` | A 型保持默认；B 型将 `IMPORT_COLS` 替换为 `B_IMPORT_COLS`；B′ 型使用 `B_PRIME_IMPORT_COLS` |
 | `web/index.html` | 替换 `{{ PLATFORM }}`/`{{ LOGO_LETTER }}`；B 型替换添加面板（§14）；删除 `[OPTIONAL]` 块 |
 | `api/course_plan.py` | **B′ 型**：对接 `FIELD_*` 常量与 `CourseService` 判断方法；`CourseService.list_actionable_courses` 内部调用 `plan_actionable_courses` |
 | `runner/course_runner.py` | 调整阈值与字段名；A 型用 `CourseRunner`；**B 型**用 `YearTaskRunner` |

@@ -951,4 +951,5 @@ function applyListLayout() {
 - [ ] 「同步项目」可用且 toast 中文反馈
 - [ ] 分页与 `filtered_total` 正确
 - [ ] 桌面/移动互斥渲染；抽屉不被遮罩盖住
+- [ ] `credential_input_mode=combined` 时 B′ 添加面板显示「账号密码」一栏 `textarea`（`#fCredentialWrapBp`），隐藏账号/密码分栏；`split` 时相反
 - [ ] Excel 导入列与 §15.1 一致（见 `excel-spec.md` §2B′）

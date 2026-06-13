@@ -48,7 +48,13 @@ def get_excel(request: Request):
 
 
 def _site_profile(request: Request) -> str:
-    return getattr(request.app.state, "site_profile", "A").upper()
+    raw = str(getattr(request.app.state, "site_profile", "A") or "A").strip()
+    u = raw.upper().replace("′", "").replace("'", "")
+    if u in ("B_PRIME", "BPRIME"):
+        return "B_prime"
+    if u == "B":
+        return "B"
+    return "A"
 
 
 def _has_credit_apply(request: Request) -> bool:
@@ -180,7 +186,7 @@ async def list_accounts(
 
 @app.post("/api/accounts/{account_id}/sync-projects")
 async def sync_account_projects(account_id: int, request: Request):
-    if _site_profile(request) not in ("B_prime",):
+    if _site_profile(request) != "B_prime":
         raise HTTPException(400, detail="仅 B′ 项目驱动型支持同步项目")
     # TODO: ensure_session → build_project_status → store.update extra.project_status
     raise HTTPException(501, detail="请实现 project_sync.build_project_status")
@@ -215,8 +221,8 @@ async def create_account(body: CreateAccountBody, request: Request):
     if body.report_mode and body.report_mode != "normal":
         extra["report_mode"] = body.report_mode
     display = body.display_name.strip()
-    if profile == "B":
-        display = ""  # B 型登录后从站点回填姓名
+    if profile in ("B", "B_prime"):
+        display = ""  # B/B′ 型登录后从站点回填姓名
     elif not display:
         display = username
     acc_id = store.create_account(

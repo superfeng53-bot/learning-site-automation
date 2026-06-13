@@ -2,7 +2,8 @@
 Excel 导入/导出（中文表头，openpyxl）。
 复制到 <svc>/web/excel_io.py，按 site_profile 调整：
   - A 型：IMPORT_COLS 保持默认（含学科/学分/卡号）
-  - B 型：替换 IMPORT_COLS 为 B_IMPORT_COLS，删除 A 型学科列
+  - B 型：B_IMPORT_COLS（公需年度型）
+  - B′ 型：B_PRIME_IMPORT_COLS（项目驱动型）
 
 依赖：openpyxl（已在项目 requirements.txt 中）
 """
@@ -50,6 +51,16 @@ B_IMPORT_COLS_COMBINED = [
     COMBINED_CRED_COL, "账号", "密码", "备注", "目标年度", "任务模式",
 ]
 
+# ── B′ 型列定义（项目驱动型）──────────────────────────────────────────────────
+
+B_PRIME_IMPORT_COLS = [
+    "账号", "密码", "备注", "任务模式",
+]
+
+B_PRIME_IMPORT_COLS_COMBINED = [
+    COMBINED_CRED_COL, "账号", "密码", "备注", "任务模式",
+]
+
 # ── 导出追加列（状态/日志等）─────────────────────────────────────────────────
 
 EXPORT_EXTRA_COLS = [
@@ -75,10 +86,23 @@ def _current_year_str() -> str:
     return str(datetime.now(tz=ZoneInfo("Asia/Shanghai")).year)
 
 
+def _norm_site_profile(site_profile: str) -> str:
+    """规范为 A / B / B_prime。"""
+    raw = (site_profile or "A").strip()
+    u = raw.upper().replace("′", "").replace("'", "")
+    if u in ("B_PRIME", "BPRIME"):
+        return "B_prime"
+    if u == "B":
+        return "B"
+    return "A"
+
+
 def import_cols_for(site_profile: str = "A", credential_input_mode: str = "split") -> list[str]:
     """按 site_profile 与凭证输入模式返回导入/导出前半段列顺序。"""
-    profile = site_profile.upper()
+    profile = _norm_site_profile(site_profile)
     combined = (credential_input_mode or "split").strip().lower() == "combined"
+    if profile == "B_prime":
+        return B_PRIME_IMPORT_COLS_COMBINED if combined else B_PRIME_IMPORT_COLS
     if profile == "B":
         return B_IMPORT_COLS_COMBINED if combined else B_IMPORT_COLS
     return A_IMPORT_COLS_COMBINED if combined else IMPORT_COLS
@@ -176,7 +200,26 @@ def build_template_xlsx(
     # Sheet2：填写说明
     ws2 = wb.create_sheet("填写说明")
     combined = COMBINED_CRED_COL in cols
-    if site_profile.upper() == "B":
+    profile = _norm_site_profile(site_profile)
+    if profile == "B_prime":
+        notes = [
+            ("说明", "内容"),
+            ("表头", "不可改字、不可调列顺序"),
+            ("必填列", "账号+密码（分列填写），或仅填「账号密码」一栏（自动识别）"),
+            *(
+                [("账号密码", "可粘贴「账号 xxx 密码 yyy」或 user pass；与分列二选一")]
+                if combined else []
+            ),
+            ("任务模式", "标准 或 快速（可选，默认标准）"),
+            (
+                "示例",
+                "账号 zhangsan 密码 （示例） / zhangsan@example.com / / 备注 / 标准"
+                if combined
+                else "zhangsan@example.com / （密码）/ 备注 / 标准",
+            ),
+            ("重复账号", "重复账号自动跳过，不会覆盖"),
+        ]
+    elif profile == "B":
         notes = [
             ("说明", "内容"),
             ("表头", "不可改字、不可调列顺序"),
@@ -269,9 +312,10 @@ def parse_import_xlsx(
 ) -> ImportResult:
     """
     解析导入文件。
-    site_profile: "A"（学科规划型）或 "B"（公需年度型）
+    site_profile: "A" / "B" / "B_prime"
     只认中文表头；英文表头报错。
     """
+    profile = _norm_site_profile(site_profile)
     wb = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
     ws = None
     for sn in wb.sheetnames:
@@ -315,7 +359,7 @@ def parse_import_xlsx(
 
         combined_raw = v(COMBINED_CRED_COL) if col(COMBINED_CRED_COL) is not None else ""
 
-        if site_profile == "B":
+        if profile in ("B", "B_prime"):
             username = v("账号")
             password = v("密码")
             if not username and not password and not combined_raw:
@@ -326,18 +370,20 @@ def parse_import_xlsx(
                 errors.append({"row": ri, "reason": str(exc)})
                 continue
             remark = v("备注")
-            yi = _resolve_header_col(header, B_YEAR_HEADER_ALIASES)
-            years_raw = v_at(yi)
-            target_years = (
-                [y.strip() for y in years_raw.replace("，", ",").replace("、", ",").split(",") if y.strip()]
-                if years_raw else [_current_year_str()]
-            )
             mi = _resolve_header_col(header, B_MODE_HEADER_ALIASES)
             report_mode = v_at(mi, "normal")
             if report_mode in ("快速", "fast"):
                 report_mode = "fast"
             else:
                 report_mode = "normal"
+            target_years: list[str] = []
+            if profile == "B":
+                yi = _resolve_header_col(header, B_YEAR_HEADER_ALIASES)
+                years_raw = v_at(yi)
+                target_years = (
+                    [y.strip() for y in years_raw.replace("，", ",").replace("、", ",").split(",") if y.strip()]
+                    if years_raw else [_current_year_str()]
+                )
             rows.append(ImportRow(
                 display_name="",
                 username=username,
@@ -414,7 +460,7 @@ def build_export_xlsx(
     accounts: list of dict（须含 username；combined 模式须含 password 以填充「账号密码」列）
     """
     cols = import_cols or import_cols_for(site_profile, credential_input_mode)
-    extra_cols = EXPORT_EXTRA_COLS if site_profile.upper() == "A" else B_EXPORT_EXTRA_COLS
+    extra_cols = EXPORT_EXTRA_COLS if _norm_site_profile(site_profile) == "A" else B_EXPORT_EXTRA_COLS
     all_cols = cols + extra_cols
 
     wb = openpyxl.Workbook()

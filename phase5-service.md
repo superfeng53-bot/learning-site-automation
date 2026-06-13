@@ -357,8 +357,9 @@ The console has a **pre-built template**: copy `templates/code/web/index.html` t
 
 1. Replace `{{ PLATFORM }}` and `{{ LOGO_LETTER }}` with actual values.
 2. If `site_profile=B`: use built-in `#addFormB`（模板已含年度 pill + `credential_input_mode` 一栏/分两栏切换）；**勿**删掉 `#fCredentialWrapB` / `applyCredentialInputLayout`；仅删 `[OPTIONAL]` 块并对照 `web-ui-spec.md §14` 验收。
-3. Delete `[OPTIONAL:xxx]` blocks for features not in `docs/API_REQUIREMENTS.md` scope.
-4. Verify all items in `web-ui-spec.md §12–§13`. Fix any that fail.
+3. If `site_profile=B_prime`: use built-in `#addFormBp`（无年度 pill，含 `credential_input_mode` 一栏/分两栏切换）；**勿**删掉 `#fCredentialWrapBp`；对照 `web-ui-spec.md §15` 验收。
+4. Delete `[OPTIONAL:xxx]` blocks for features not in `docs/API_REQUIREMENTS.md` scope.
+5. Verify all items in `web-ui-spec.md §12–§13`. Fix any that fail.
 
 **常见模板陷阱**（A/B/B′ 共用，见 `web-ui-spec.md` §8.15–§8.16、§15.5–§15.6）：
 
