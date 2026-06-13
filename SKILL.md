@@ -191,6 +191,7 @@ Bundling **gap acceptance** or **scope cut** into the normal phase-gate confirma
 - Do NOT reorder export columns relative to import template
 - Do NOT use emoji in UI text; use plain Chinese labels
 - Do NOT skip `ui.confirm` / `ui.toast` patterns in web UI
+- Do NOT ship `index.html` with `#tableWrap` left at `opacity:0` after data load, or with IIFE handlers not on `window` — both break list visibility and drawer clicks (see `web-ui-spec.md` §8.15–§8.16)
 - Do NOT mark a phase complete with unchecked DoD or unaccepted gaps in `docs/gaps/`
 - Do NOT mark phase 6 complete when only dev-mode `./start.sh` works — **`smoke_frozen.py` must pass** on the PyInstaller binary (see `phase6-packaging.md` §Packaged Artifact Smoke Test)
 - Do NOT duplicate full spec checklists in `docs/verification/` — only pass/fail + evidence

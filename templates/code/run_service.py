@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import threading
 import time
 import webbrowser
@@ -30,6 +31,21 @@ SITE_PROFILE = "A"   # TODO: "A" 或 "B"
 HAS_CREDIT_APPLY = False  # TODO: 站点有申请学分流程时 True
 HAS_RECHARGE = False      # TODO: 站点有购卡/充值时 True
 CREDENTIAL_INPUT_MODE = "split"  # TODO: "split" 或 "combined"（与 data/account.json 一致）
+
+
+def _resolve_credential_input_mode(root: Path) -> str:
+    """Prefer data/account.json; fall back to CREDENTIAL_INPUT_MODE constant."""
+    account_path = root / "data" / "account.json"
+    if account_path.is_file():
+        try:
+            data = json.loads(account_path.read_text(encoding="utf-8"))
+            mode = str(data.get("credential_input_mode", "")).strip().lower()
+            if mode in ("split", "combined"):
+                return mode
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            pass
+    mode = str(CREDENTIAL_INPUT_MODE or "split").strip().lower()
+    return mode if mode in ("split", "combined") else "split"
 
 
 def main():
@@ -82,7 +98,7 @@ def main():
     app.state.site_profile          = SITE_PROFILE
     app.state.has_credit_apply      = HAS_CREDIT_APPLY
     app.state.has_recharge          = HAS_RECHARGE
-    app.state.credential_input_mode = CREDENTIAL_INPUT_MODE
+    app.state.credential_input_mode = _resolve_credential_input_mode(root)
     app.state.recharge_handler      = None  # TODO: callable(acc_dict, card_no, card_pwd) -> dict
 
     # ── 端口 & 元数据 ─────────────────────────────────────────────────────────

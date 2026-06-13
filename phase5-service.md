@@ -356,9 +356,15 @@ Change per site as needed but keep them as constants in `<svc>/config.py`. Do no
 The console has a **pre-built template**: copy `templates/code/web/index.html` to `<svc>/web/templates/index.html`, then:
 
 1. Replace `{{ PLATFORM }}` and `{{ LOGO_LETTER }}` with actual values.
-2. If `site_profile=B`: replace the add-form section with `web-ui-spec.md §14` year-pill version.
+2. If `site_profile=B`: use built-in `#addFormB`（模板已含年度 pill + `credential_input_mode` 一栏/分两栏切换）；**勿**删掉 `#fCredentialWrapB` / `applyCredentialInputLayout`；仅删 `[OPTIONAL]` 块并对照 `web-ui-spec.md §14` 验收。
 3. Delete `[OPTIONAL:xxx]` blocks for features not in `docs/API_REQUIREMENTS.md` scope.
 4. Verify all items in `web-ui-spec.md §12–§13`. Fix any that fail.
+
+**常见模板陷阱**（A/B/B′ 共用，见 `web-ui-spec.md` §8.15–§8.16、§15.5–§15.6）：
+
+- `#tableWrap` 初始 `opacity:0` 时，`applyListLayout()` 显示表格必须设 `opacity:1`，否则统计/分页正常但桌面表格不可见。
+- 脚本在 IIFE 内时，须 `Object.assign(window, { openDrawer, closeDrawer, requeueAccount, … })`，否则姓名点击与操作列 `onclick` 报 `ReferenceError`。
+- B 型列表须 **7 列**（姓名、账号、备注、目标年度、状态、进度、操作），表头与 `rowHtml()` 列数一致；姓名列点击打开抽屉。
 
 Read **`web-ui-spec.md`** as authoritative spec — the template is an implementation of it. If template and spec diverge, fix the template copy.
 

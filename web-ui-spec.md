@@ -674,7 +674,8 @@ Tabs 根据 `docs/API_REQUIREMENTS.md` 生成：基础为 `基本信息 / 课程
 12. **编辑重学模态**：字段与 §6.5 添加表单一致（含密码；空密码表示不修改）；主按钮文案「保存并重学」；取消不发请求。
 13. **数字输入**：并发 `min=1 max=400 step=1`；学分 `min=0 step=0.5`。
 14. **日期筛选**：列表 toolbar 提供 `date_from` / `date_to`（`<input type="date">`），映射到 `GET /api/accounts?date_from=&date_to=`（Unix 秒，按创建时间 `created_at` 过滤）。
-15. **空态切换**：初次加载 → skeleton；数据到达 → 渐变 opacity `0→1`（200ms）；无数据 → empty-state。
+15. **空态切换**：初次加载 → skeleton；数据到达 → `#tableWrap` 设为 `display:block` **且 `opacity:1`**（初始 inline 可为 `opacity:0` 做淡入）；无数据 → empty-state。
+16. **IIFE 与内联事件**：脚本包在 `(function(){…})()` 时，凡 HTML 属性里的 `onclick` / `onchange` / `oninput` 所调用的函数（含 `openDrawer`、`requeueAccount`、筛选/分页等）**必须** `Object.assign(window, { … })` 暴露；否则控制台报 `ReferenceError`，详情抽屉与操作列按钮均失效。`window.ui` / `window.closeModal` 已暴露，其余同理。
 
 ---
 
@@ -843,7 +844,8 @@ function recentFiveYears() {
 
 ### 14.3 列表与详情
 
-- 列表列：账号、备注、**目标年度摘要**（如 `2026、2025`）、状态、进度（可用细条 `progress_percent` 或按年最小完成率）。
+- 列表列：**姓名**、账号、备注、**目标年度摘要**（如 `2026、2025`）、状态、进度（可用细条 `progress_percent` 或按年最小完成率）。
+- **姓名列**：`font-weight 600`；添加时无姓名，未跑过 worker 显示「（待获取）」；登录后显示 `display_name` 或 `extra.real_name`；**点击姓名**打开详情抽屉（同 A 型 §6.7）。
 - 展开/抽屉：**按年分组**展示 `year_status`（已购、要求学时、已获得、是否完成、当前课程名）；**无**「学科·学分」pill 行。
 - 课程 Tab（若有）：按 **年度 → 课程列表** 嵌套，排序与 `queue_rank` 无关（B 型无 planner）。
 
@@ -861,6 +863,8 @@ function recentFiveYears() {
 - [ ] 添加面板显示近 5 年 pill，当前年默认选中
 - [ ] 未选年度提交被拦截（中文 toast）
 - [ ] 列表/抽屉无学科1/学分必填提示
+- [ ] 列表第一栏为**姓名**（未获取时「（待获取）」），第二栏为账号；点击姓名打开抽屉
+- [ ] `credential_input_mode=combined` 时 B 型添加面板显示「账号密码」一栏 `textarea`（`#fCredentialWrapB`），隐藏账号/密码分栏；`split` 时相反
 - [ ] Excel 导入列与 §14.2 一致（见 `excel-spec.md` §2B）
 
 ---
@@ -914,11 +918,15 @@ function recentFiveYears() {
 
 桌面（`min-width: 641px`）只显示表格；移动端（`max-width: 640px`）只显示卡片。**禁止**同时 `display` 表格与卡片（医学24 曾出现双渲染）。
 
+`applyListLayout()` 在显示 `#tableWrap` 时**必须**同步 `opacity: 1`（HTML 初始可为 `opacity:0` + transition）；隐藏时 `opacity:0`，否则 API 有数据但桌面表格不可见。
+
 ```javascript
 const _listMq = window.matchMedia('(max-width:640px)');
 function applyListLayout() {
   const mobile = _listMq.matches;
-  tableWrap.style.display = hasData && !mobile ? 'block' : 'none';
+  const showTable = hasData && !mobile;
+  tableWrap.style.display = showTable ? 'block' : 'none';
+  tableWrap.style.opacity = showTable ? '1' : '0';
   cardList.style.display = hasData && mobile ? 'flex' : 'none';
 }
 ```
@@ -933,6 +941,8 @@ function applyListLayout() {
 ```
 
 复制日志按钮用 `addEventListener('click', () => copyErrLog(logText))`，**禁止** `onclick="copyErrLog(${JSON.stringify(...)})"`（长日志会被截断）。
+
+脚本若在 IIFE 内，复制模板末尾须保留 `Object.assign(window, { openDrawer, closeDrawer, switchTab, requeueAccount, … })`，见 §8 第 16 条。
 
 ### 15.7 B′ 验收追加项
 

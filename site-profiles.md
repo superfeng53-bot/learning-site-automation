@@ -158,12 +158,12 @@ Phase 2 `AskQuestion` 中 **不要** 勾选「学科列表 / 分类列表」除�
 
 - `recent_five_years()` = `[str(now.year - i) for i in range(5)]`。
 - UI：**segmented / pill 多选 checkbox**，`name="target_years"`，**默认勾选当前年**。
-- 列表展示：`extra.year_status[year]`（已购、要求学时、已获得、完成百分比、当前课程名等）。
+- 列表列：姓名（登录后回填）、账号、备注、目标年度摘要、状态、进度；详情按 `extra.year_status[year]` 分年展示（已购、要求学时、已获得、完成百分比、当前课程名等）。
 - 详情 Tab：**按目标年度分组**课程进度，而非按学科标签。
 
 ### B.5 Excel
 
-见 `excel-spec.md` §2B。导入列：`账号 | 密码 | 备注 | 目标年度 | 任务模式`；年度分隔符 `,，;` 或空白；模式别名 `快速/fast` → `report_mode=fast`。
+见 `excel-spec.md` §2B。导入列：`账号 | 密码 | 备注 | 目标年度 | 任务模式`（`combined` 时首列「账号密码」）；年度分隔符 `,，;` 或空白；模式别名 `快速/fast` → `report_mode=fast`。
 
 ### B.6 Phase 5 数据模型差异
 
