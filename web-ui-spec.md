@@ -370,6 +370,8 @@ cursor pointer（折叠时）
 
 `GET /api/config` 返回 `credential_input_mode: "split" | "combined"`。
 
+**注意**：此为**项目级**配置（`data/account.json` + `run_service.py` 的 `CREDENTIAL_INPUT_MODE`），启动时加载。**不提供** Web 控制台内实时切换；修改后须重启服务。模板已内置 `applyCredentialInputLayout()` — 勿删除 `#fCredentialWrap*` / `parseCombinedCredentials()`。
+
 **表单字段标签**（与 Excel 导入列对齐，全部中文）：
 
 - **Site profile A（默认）**：姓名、账号、密码（或 combined 一栏）、学科1、学分1、学科2、学分2、卡号、卡号密码、备注。
@@ -846,7 +848,9 @@ function recentFiveYears() {
 
 - 列表列：**姓名**、账号、备注、**目标年度摘要**（如 `2026、2025`）、状态、进度（可用细条 `progress_percent` 或按年最小完成率）。
 - **姓名列**：`font-weight 600`；添加时无姓名，未跑过 worker 显示「（待获取）」；登录后显示 `display_name` 或 `extra.real_name`；**点击姓名**打开详情抽屉（同 A 型 §6.7）。
-- 展开/抽屉：**按年分组**展示 `year_status`（已购、要求学时、已获得、是否完成、当前课程名）；**无**「学科·学分」pill 行。
+- 展开/抽屉：**按年分组**展示 `year_status`（要求学时、已获得、总进度条、课程列表）；当前学习课程展开**课节/单元**列表及各自进度（高亮 `learning_progress.hour_id`）；**无**「学科·学分」pill 行。已获得学时为 0 时，总进度条展示课程学习进度并标注「（学习中）」。
+- 基本信息 tab：若有 `extra.learning_progress`，展示「正在学习」一行（课程 · 课节 · 进度%）。
+- 列表 `progressPercent()` + `yearDisplayPercent()`：优先各年展示进度（`annual_progress_percent` 或回退 `course_learning_percent` / 课程 `percent` / `learning_progress.percent`）；**勿**在 `progress_percent===0` 时直接返回 0。
 - 课程 Tab（若有）：按 **年度 → 课程列表** 嵌套，排序与 `queue_rank` 无关（B 型无 planner）。
 
 ### 14.4 API 形状（B 型）
@@ -856,7 +860,7 @@ function recentFiveYears() {
 | POST | `/api/accounts` | `{ username, password, remark?, target_years: string[], report_mode?: "normal"\|"fast" }` |
 | PATCH | `/api/accounts/{id}` | 同上；`requeue` 行为同 A 型 |
 
-`GET /api/accounts/{id}` 的 `extra` 含 `year_status`、`current_year`、`phase`（中文 phase 标签映射见项目 `view_format`）。
+`GET /api/accounts/{id}` 的 `extra` 含 `year_status`、`learning_progress`、`progress_percent`、`current_year`、`phase`（中文 phase 标签映射见项目 `view_format`）。
 
 ### 14.5 B 型验收追加项
 
@@ -865,6 +869,9 @@ function recentFiveYears() {
 - [ ] 列表/抽屉无学科1/学分必填提示
 - [ ] 列表第一栏为**姓名**（未获取时「（待获取）」），第二栏为账号；点击姓名打开抽屉
 - [ ] `credential_input_mode=combined` 时 B 型添加面板显示「账号密码」一栏 `textarea`（`#fCredentialWrapB`），隐藏账号/密码分栏；`split` 时相反
+- [ ] 年度进度 tab：`renderYearProgressB()` 展示课程块 + 课节进度条；正在学课节高亮（`.unit-row.active`）
+- [ ] 基本信息 tab 展示「正在学习」（当 `learning_progress` 存在）
+- [ ] 列表进度条随 Worker 写入的 `progress_percent` 更新；**已获得学时为 0 时**仍显示课程学习进度（非 0%）
 - [ ] Excel 导入列与 §14.2 一致（见 `excel-spec.md` §2B）
 
 ---

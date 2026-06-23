@@ -48,8 +48,12 @@ has_exam    : bool          # 站点是否有考试流程
 has_credit  : bool          # 站点是否有申请学分流程（决定 apply_queue / waiting_apply / ApplyWorker）
 has_recharge: bool          # 是否有购卡/充值
 has_subjects: bool          # 是否需要学科/分类列表（A 型选课用）
-credential_input_mode: "split" | "combined"  # Web 添加账号：两栏 vs 一栏自动识别
+credential_input_mode: "split" | "combined"  # 项目级：Web 添加账号两栏 vs 一栏自动识别（改 data/account.json 后重启）
 ```
+
+**`credential_input_mode`**：模板已实现 `applyCredentialInputLayout()` + `credential_parser`；默认 `split`。批量运营常在 `init_project.py --credential-input-mode combined` 或 `data/account.json` 设为 `combined`。**无** Web 内切换。
+
+**B 型进度**：`progress-sync.md`（双指标 + 年度完成判定 + 列表 0% 回退）+ `year_task_template.py` + `progress_snapshot_template.py` + `worker_b_template.py` + `client_ssl_snippet.md`。
 
 引擎按开关自动裁剪：
 

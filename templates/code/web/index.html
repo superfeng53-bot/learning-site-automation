@@ -154,6 +154,18 @@ tbody td{padding:12px 14px;font-size:13.5px;vertical-align:middle}
 .progress-bar span{display:block;height:100%;background:var(--c-primary);border-radius:var(--r-pill)}
 .year-group{margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--c-border)}
 .year-group h3{font-size:13px;margin-bottom:8px;color:var(--c-text-soft)}
+.course-block{margin-top:12px;padding:10px 12px;background:var(--c-surface-2);border:1px solid var(--c-border);border-radius:var(--r-sm)}
+.course-block.course-active{border-color:var(--c-primary);background:var(--c-primary-soft)}
+.course-head{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:13px;font-weight:500;margin-bottom:6px}
+.course-pct{font-size:12px;color:var(--c-text-muted);font-weight:400}
+.unit-list{margin-top:10px;display:flex;flex-direction:column;gap:6px}
+.unit-row{display:grid;grid-template-columns:1fr auto;grid-template-rows:auto auto;gap:2px 10px;font-size:12px;align-items:center}
+.unit-row.active .unit-title{color:var(--c-primary);font-weight:600}
+.unit-title{grid-column:1;color:var(--c-text-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.unit-pct{grid-column:2;color:var(--c-text-muted);font-family:var(--font-mono);font-size:11px}
+.unit-bar{grid-column:1/-1;height:4px;background:var(--c-surface-3);border-radius:var(--r-pill);overflow:hidden}
+.unit-bar span{display:block;height:100%;background:var(--c-primary);border-radius:var(--r-pill)}
+.year-summary{margin-bottom:10px}
 .td-status{width:120px}
 .td-msg{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px;color:var(--c-text-soft);font-size:13px}
 .td-actions{width:220px}
@@ -785,16 +797,118 @@ function yearSummary(a){
   }catch{return '—';}
 }
 
+function yearDisplayPercent(y, lp){
+  const annual=y.annual_progress_percent!=null?Number(y.annual_progress_percent):
+    (y.required_hours>0?Math.round(100*(y.earned_hours||0)/y.required_hours):
+      (y.progress_percent!=null?Number(y.progress_percent):0));
+  if(annual>0) return annual;
+  if(y.progress_percent>0) return Number(y.progress_percent);
+  if(y.course_learning_percent>0) return Number(y.course_learning_percent);
+  const courses=y.courses||[];
+  const cpcts=courses.map(c=>{
+    const p=Number(c.percent||0);
+    return p>=1?100:Math.round(p*100);
+  }).filter(p=>p>0);
+  if(cpcts.length) return Math.round(cpcts.reduce((s,n)=>s+n,0)/cpcts.length);
+  if(lp&&String(lp.year||'')===String(y.year||'')&&lp.percent!=null){
+    const p=Number(lp.percent||0);
+    return p>=1?100:Math.round(p*100);
+  }
+  return 0;
+}
 function progressPercent(a){
   try{
     const extra=JSON.parse(a.extra_json||'{}');
     const ys=extra.year_status||{};
     const vals=Object.values(ys);
-    if(!vals.length) return extra.progress_percent||0;
-    const pcts=vals.map(y=>y.progress_percent!=null?y.progress_percent:
-      (y.required_hours>0?Math.round(100*y.earned_hours/y.required_hours):0));
-    return Math.min(...pcts);
+    const lp=extra.learning_progress||{};
+    if(vals.length){
+      const pcts=vals.map(y=>yearDisplayPercent(y, lp));
+      const best=Math.max(...pcts);
+      if(best>0) return best;
+    }
+    if(extra.progress_percent>0) return Number(extra.progress_percent);
+    if(lp.percent!=null){
+      const p=Number(lp.percent||0);
+      if(p>0) return p>=1?100:Math.round(p*100);
+    }
+    return Number(extra.progress_percent)||0;
   }catch{return 0;}
+}
+
+function hourPctLabel(h){
+  if(h&&h.percent_name) return h.percent_name;
+  const p=Number(h&&h.percent||0);
+  if(p>=1) return '100%';
+  return Math.round(p*100)+'%';
+}
+function hourBarWidth(h){
+  const p=Number(h&&h.percent||0);
+  return Math.min(100, Math.round(p>=1?100:p*100));
+}
+function courseBarWidth(c){
+  const p=Number(c&&c.percent||0);
+  return Math.min(100, Math.round(p>=1?100:p*100));
+}
+function renderCourseList(courses, lp, year){
+  if(!courses||!courses.length) return '';
+  return courses.map(c=>{
+    const isActive=String(lp.year||'')===String(year)&&String(lp.course_id||'')===String(c.course_id||'');
+    const cpct=courseBarWidth(c);
+    let hoursHtml='';
+    if(c.hours&&c.hours.length){
+      hoursHtml='<div class="unit-list">'+c.hours.map(h=>{
+        const active=isActive&&String(lp.hour_id||'')===String(h.hour_id||'');
+        return `<div class="unit-row${active?' active':''}">
+          <span class="unit-title">${esc(h.chapter_title?h.chapter_title+' · ':'')}${esc(h.title||'课节')}</span>
+          <span class="unit-pct">${esc(hourPctLabel(h))}</span>
+          <div class="unit-bar"><span style="width:${hourBarWidth(h)}%"></span></div>
+        </div>`;
+      }).join('')+'</div>';
+    }
+    return `<div class="course-block${isActive?' course-active':''}">
+      <div class="course-head">
+        <span class="course-title">${esc(c.title||c.course_id||'课程')}</span>
+        <span class="course-pct">${esc(c.percent_name||hourPctLabel({percent:c.percent}))}${c.finished?' · 已完成':''}</span>
+      </div>
+      <div class="progress-bar"><span style="width:${cpct}%"></span></div>
+      ${hoursHtml}
+    </div>`;
+  }).join('');
+}
+function renderYearProgressB(extra){
+  const ys=extra.year_status||{};
+  const lp=extra.learning_progress||{};
+  const years=Object.keys(ys).sort((a,b)=>b.localeCompare(a));
+  if(!years.length){
+    if(lp.course_title){
+      const pct=hourPctLabel(lp);
+      return `<div class="year-group"><h3>${esc(lp.year||'当前')} 年</h3>
+        <p style="font-size:13px;color:var(--c-text-muted)">正在学习：${esc(lp.course_title)} · ${esc(lp.hour_title||'课节')} ${esc(pct)}</p></div>`;
+    }
+    return '<p style="color:var(--c-text-muted);font-size:13px">暂无年度进度（账号运行后将自动同步）</p>';
+  }
+  return years.map(yr=>{
+    const y={...(ys[yr]||{}), year:yr};
+    const pct=yearDisplayPercent(y, lp);
+    const annualOnly=y.annual_progress_percent!=null?y.annual_progress_percent:
+      (y.required_hours>0?Math.round(100*(y.earned_hours||0)/y.required_hours):0);
+    const coursesHtml=renderCourseList(y.courses||[], lp, yr);
+    const learningLine=(String(lp.year||'')===String(yr)&&lp.course_title)
+      ?`<p style="font-size:12.5px;color:var(--c-primary);margin:8px 0 0">正在学：${esc(lp.course_title)} · ${esc(lp.chapter_title?lp.chapter_title+' · ':'')}${esc(lp.hour_title||'课节')} ${esc(lp.percent_name||hourPctLabel(lp))}</p>`:'';
+    return `<div class="year-group"><h3>${esc(yr)} 年</h3>
+      <div class="year-summary">
+        <dl class="kv" style="margin-bottom:8px">
+          <dt>要求学时</dt><dd>${y.required_hours??'—'}</dd>
+          <dt>已获得</dt><dd>${y.earned_hours??'—'}</dd>
+          <dt>总进度</dt><dd>${pct}% ${y.completed?'（已完成）':annualOnly<pct?'（学习中）':''}</dd>
+        </dl>
+        <div class="progress-bar"><span style="width:${Math.min(100,pct)}%"></span></div>
+        ${learningLine}
+      </div>
+      ${coursesHtml||'<p style="font-size:12.5px;color:var(--c-text-muted);margin-top:8px">暂无课程明细</p>'}
+    </div>`;
+  }).join('');
 }
 
 function projectProgressPercent(a){
@@ -1347,6 +1461,7 @@ function renderDrawerContent(a){
       <dt>状态</dt><dd>${pillHtml(a.status)}</dd>
       <dt>说明</dt><dd>${esc(a.status_msg||'—')}</dd>
       <dt>当前阶段</dt><dd>${esc(extra.phase||'—')}</dd>
+      ${extra.learning_progress&&extra.learning_progress.course_title?`<dt>正在学习</dt><dd>${esc(extra.learning_progress.course_title)} · ${esc(extra.learning_progress.hour_title||'课节')} ${esc(extra.learning_progress.percent_name||hourPctLabel(extra.learning_progress))}</dd>`:''}
       <dt>重试次数</dt><dd>${a.retry_count||0}</dd>
       <dt>创建时间</dt><dd>${fmtTs(a.created_at)}</dd>
       <dt>更新时间</dt><dd>${fmtTs(a.updated_at)}</dd>
@@ -1368,22 +1483,7 @@ function renderDrawerContent(a){
   }
 
   const courseRows=(()=>{
-    if(isB()){
-      const ys=extra.year_status||{};
-      const years=Object.keys(ys).sort((a,b)=>b.localeCompare(a));
-      if(!years.length) return '<p style="color:var(--c-text-muted);font-size:13px">暂无年度进度</p>';
-      return years.map(yr=>{
-        const y=ys[yr]||{};
-        const pct=y.progress_percent!=null?y.progress_percent:
-          (y.required_hours>0?Math.round(100*(y.earned_hours||0)/y.required_hours):0);
-        return `<div class="year-group"><h3>${esc(yr)} 年</h3><dl class="kv">
-          <dt>要求学时</dt><dd>${y.required_hours??'—'}</dd>
-          <dt>已获得</dt><dd>${y.earned_hours??'—'}</dd>
-          <dt>进度</dt><dd>${pct}% ${y.completed?'（已完成）':''}</dd>
-          <dt>当前课程</dt><dd>${esc(y.current_course_title||extra.current_course_title||'—')}</dd>
-        </dl></div>`;
-      }).join('');
-    }
+    if(isB()) return renderYearProgressB(extra);
     try{
       const results=extra[Object.keys(extra).find(k=>k.endsWith('_results'))||'']||[];
       if(!results.length) return '<p style="color:var(--c-text-muted);font-size:13px">暂无课程数据</p>';

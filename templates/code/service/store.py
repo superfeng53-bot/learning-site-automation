@@ -15,6 +15,14 @@ from typing import Optional
 from .config import DEFAULT_CONCURRENCY, MAX_CONCURRENCY, MIN_CONCURRENCY
 from .states import assert_account_transition, assert_apply_transition, is_force_target
 
+# B 型重学时清除的运行期 extra 字段（见 progress-sync.md）
+_B_RUNTIME_EXTRA_KEYS = frozenset({
+    "phase", "failed_phase", "error_log_text",
+    "year_status", "current_year", "certificate_status",
+    "current_course_title", "current_course_id", "current_project_id", "project_status",
+    "learning_progress", "progress_percent",
+})
+
 # ── Schema ────────────────────────────────────────────────────────────────────
 
 _SCHEMA = """
@@ -294,16 +302,16 @@ class Store:
             return
         extra = json.loads(account.get("extra_json") or "{}")
 
-        keep_keys = {"cookies", "user_profile", "card_no", "region"}
+        keep_keys = {"cookies", "user_profile", "card_no", "region", "report_mode", "remark"}
         if preserve_extra_keys:
             keep_keys.update(preserve_extra_keys)
-        # 删除运行期产出字段（保留 keep_keys）
-        runtime_prefixes = ("_results", "phase", "failed_phase", "error_log")
-        new_extra = {
-            k: v for k, v in extra.items()
-            if k in keep_keys or not any(k.endswith(p) or k == p for p in runtime_prefixes)
-        }
-        # 明确清除
+        new_extra = {k: v for k, v in extra.items() if k in keep_keys}
+        for key in _B_RUNTIME_EXTRA_KEYS:
+            new_extra.pop(key, None)
+        # A 型：仍清除 *_results 等运行期产出
+        for k in list(new_extra.keys()):
+            if k.endswith("_results"):
+                new_extra.pop(k, None)
         for key in ("phase", "failed_phase", "error_log_text"):
             new_extra.pop(key, None)
 

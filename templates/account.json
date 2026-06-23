@@ -4,5 +4,5 @@
   "username": "<USERNAME>",
   "password": "<PASSWORD>",
   "credential_input_mode": "split",
-  "notes": "Test account for local development only. This file must be in .gitignore. credential_input_mode: split=账号密码分两栏, combined=一栏粘贴自动识别"
+  "notes": "Test account for local development only. Gitignored. credential_input_mode: split=账号密码分两栏; combined=一栏粘贴自动识别（批量运营常用，改后须重启 run_service）"
 }

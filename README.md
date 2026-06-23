@@ -8,8 +8,9 @@
 |------|------|
 | `SKILL.md` | 技能入口、Cursor 编排（`cursor-agent-playbook.md`）、六阶段总览 |
 | `cursor-agent-playbook.md` | 内置浏览器优先（§1.1）、handoff、验收/缺口闭环（§8）、子 agent、解析用 skill 组合（§5） |
-| `web-ui-spec.md` | Phase 5 Web 控制台规格（**简体中文**、复制日志、无 HTML 模板） |
+| `web-ui-spec.md` | Phase 5 Web 控制台规格（**简体中文**、复制日志、凭证一栏/分两栏、B 型课节进度抽屉） |
 | `excel-spec.md` | Excel 导入/导出规格：**文件名、Sheet 名、表头字段名全部中文**；导出列与导入模板对齐 |
+| `progress-sync.md` | B/B′ 课节进度写 `extra_json`、课节完成刷服务端总进度、Web UI 对接 |
 | `phase1-login-recon.md` … `phase6-packaging.md` | 各阶段操作细则与验收清单 |
 | `scripts/` | `init_project.py`、`captcha_probe.py` |
 | `templates/` | API 需求范围模板、通用需求模板、账号 JSON、项目骨架；`agents/api-recon.md` → `.cursor/agents/` |

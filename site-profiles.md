@@ -158,8 +158,8 @@ Phase 2 `AskQuestion` 中 **不要** 勾选「学科列表 / 分类列表」除�
 
 - `recent_five_years()` = `[str(now.year - i) for i in range(5)]`。
 - UI：**segmented / pill 多选 checkbox**，`name="target_years"`，**默认勾选当前年**。
-- 列表列：姓名（登录后回填）、账号、备注、目标年度摘要、状态、进度；详情按 `extra.year_status[year]` 分年展示（已购、要求学时、已获得、完成百分比、当前课程名等）。
-- 详情 Tab：**按目标年度分组**课程进度，而非按学科标签。
+- 列表列：姓名（登录后回填）、账号、备注、目标年度摘要、状态、进度；详情按 `extra.year_status[year]` 分年展示（要求学时、已获得、**课程与课节进度**、`learning_progress` 高亮当前课节）。
+- 详情 Tab：**按目标年度分组** → 课程列表 → 当前课课节列表（见 `progress-sync.md`）。
 
 ### B.5 Excel
 
@@ -170,14 +170,23 @@ Phase 2 `AskQuestion` 中 **不要** 勾选「学科列表 / 分类列表」除�
 在通用 `accounts` 表上：
 
 - 用 `target_years_json`（或 `requirements_json` 存 `{"profile":"year","years":[...]}` — **推荐独立列** 以免与 A 型混淆）替代学科槽位。
-- `extra_json` 必含：`year_status`（按年对象）、`current_year`、`target_years_done`、`report_mode`、`phase`（`auth` / `catalog` / `video_play` / `exam_run` / …）。
+- `extra_json` 必含：`year_status`、`learning_progress`、`progress_percent`、`current_year`、`target_years_done`、`report_mode`、`phase`（`auth` / `catalog` / `video_play` / `exam_run` / …）。课节完成时从服务端刷新 `year_status`（`progress-sync.md`）。
 - **省略**表：`apply_queue`、`credit_applications`、`ai_subject_cache`（除非用户明确要求 B+C 混合，需单独 gap 文档）。
 
 Worker：`AccountWorker.run_once` 调用 `YearTaskRunner.run(account)`，内部循环 `target_years`，而非 `course_planner.assign()` + `CourseRunner.run(project_id)`。
 
 ### B.7 与 A 型共用的部分
 
-仍使用：Phase 1 登录侦察、Phase 3 会话/重试、`HttpClient`、FastAPI 单页控制台骨架、单实例启动、中文 UI、复制日志、`error_log_text`、Excel 导出追加列（状态、说明、错误日志等）。
+登录、captcha、`SessionManager`、`HttpClient` 重试、Web 控制台壳层、单实例启动、打包。仍使用：Phase 1 登录侦察、Phase 3 会话/重试、FastAPI 单页控制台骨架、中文 UI、复制日志、`error_log_text`、Excel 导出追加列。
+
+### B.8 已知陷阱（SCZJ / 公需站点验证）
+
+| 陷阱 | 正确做法 |
+|------|----------|
+| `publicNum=0` 但课程 100%、证书已通过 | `year_task._resolve_year_completion`：优先看 `auditStatus`，勿仅认 `publicNum`（`progress-sync.md`） |
+| 列表进度 0%、详情课程有进度 | `build_year_progress` 展示进度回退 `course_learning_percent`；Web `yearDisplayPercent()` |
+| macOS Python `SSLCertVerificationError` | `client_ssl_snippet.md`：`SSL_VERIFY` 默认关，环境变量可强制开 |
+| 证书已提交仍走 `cert_apply` | `auditStatus >= 0` 时跳过重复申请 |
 
 ---
 

@@ -19,7 +19,10 @@ When `docs/API_REQUIREMENTS.md` specifies **B — 公需年度型** (`site-profi
 - [ ] `<pkg>/task_api.py` (or `year_runner.py`) exposes `run_year_task(client, year, ...) -> YearTaskResult`
 - [ ] `run_year.py` CLI: `--cookies` + `--years 2026,2025` runs years **in list order**
 - [ ] Inside each year: `get_year_courses` → filter pending → serial `study_course` → `take_exam` per course when required
-- [ ] Completion probe: certificate `earned_hours >= required_hours` for that year
+- [ ] **`study_course` callbacks**：`on_hour_start` / `on_progress_tick` / `on_hour_complete`（Phase 5 Worker 写进度用；见 `progress-sync.md`）
+- [ ] **`run_year_task` 透传**上述回调至 `study_course`
+- [ ] **年度完成判定**：复制 `templates/code/pkg/year_task_template.py` → `<pkg>/year_task.py`；用 `_resolve_year_completion` 结合证书 `auditStatus`，**勿仅**依赖 `publicNum`（见 `progress-sync.md` §年度完成判定）
+- [ ] Completion probe: certificate `earned_hours >= required_hours` **或** `auditStatus==1` **或** 课程全完成 + 证书已提交
 - [ ] **Progress gate** (before full `run_year.py`): on the year's first pending course, run the same ~60s progress-increment probe (via `probe_progress` on that course's `project_id`, or a B-type equivalent on `study_course` heartbeat) and record pass/fail in `PHASE4_REPORT.md`
 - [ ] **Do not** generate `course_planner.py` or subject-mapping for B-only projects
 

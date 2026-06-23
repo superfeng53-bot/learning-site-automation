@@ -49,6 +49,10 @@ class HttpClient:
 
 Rule of thumb: 3 attempts for write-ish endpoints, 4 for read-ish HTML scrapes. Never retry on HTTP 4xx — those are business failures, retry won't help.
 
+### SSL 证书校验（macOS / 部分 Linux Python）
+
+若运行期出现 `SSLCertVerificationError` / `certificate verify failed`，而浏览器可正常访问站点，在 `config.py` + `client.py` 增加可配置 `SSL_VERIFY`（默认关闭，环境变量可强制开启）。见 **`templates/code/pkg/client_ssl_snippet.md`**。
+
 ## Module 2 — `captcha_limiter.py`
 
 Two reasons we need this:

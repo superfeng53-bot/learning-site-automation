@@ -6,6 +6,7 @@ Goal: turn the single-account runner into a long-running scheduler that drives m
 
 - [ ] `<svc>/persistence/store.py` with SQLite (WAL) schema for `accounts / runs / kv`, plus `ai_subject_cache` when LLM subject mapping is enabled, plus optional tables from `docs/API_REQUIREMENTS.md` such as `apply_queue / credit_applications`
 - [ ] `<svc>/worker.py` `AccountWorker.run_once(account)` runs the full single-account pipeline
+- [ ] **B 型**：`worker.py` 实现课节进度同步（`learning_progress` + 课节完成刷 `year_status`）；见 `progress-sync.md` 与 `worker_b_template.py`
 - [ ] If credit application is in scope per `docs/API_REQUIREMENTS.md`, `<svc>/apply_worker.py` `ApplyWorker.process_one(now)` consumes the apply queue independently; otherwise no apply worker is generated
 - [ ] **A 型**：`<svc>/scheduling.py` implements stable per-account **8:00 daily-window spread** (`daily_eligible_at`); all day-bound deferrals use it (learning + apply). **B 型（公需无单日限制）**：可省略 `scheduling.py` 及 Worker 内「今日学满 N 门 → 明日」逻辑（见 `requirements-year-driven.md` §4.3）
 - [ ] `<svc>/orchestrator.py` ticks every N seconds, claims queued accounts under a concurrency limit
@@ -40,7 +41,8 @@ When `site_profile: B`:
 
 - Store **`target_years_json`** on `accounts` (TEXT JSON array); omit or leave empty `requirements_json`.
 - `AccountWorker.run_once`: session → **`for year in ordered_target_years(account): run_year_task(...)`** — no `course_planner`, no `ApplyWorker`.
-- `extra_json` must track `year_status`, `current_year`, `report_mode`, `phase` (see `templates/requirements-year-driven.md`).
+- `extra_json` must track `year_status`, `learning_progress`, `progress_percent`, `current_year`, `report_mode`, `phase` (see `templates/requirements-year-driven.md` and **`progress-sync.md`**).
+- **Progress sync (B)**：Worker 在课节开始/学习中写 `learning_progress`；**课节开始 + 每个课节完成**调用 `<pkg>/progress_snapshot.build_year_progress` 刷新 `year_status` + `progress_percent`（展示进度在已获得学时为 0 时回退课程学习进度，见 `progress-sync.md` §两套进度指标）。复制 `worker_b_template.py` → `<svc>/worker.py`。
 - Web UI + Excel per `web-ui-spec.md` §14 and `excel-spec.md` §2B.
 - Schema: **omit** `apply_queue`, `credit_applications`, `ai_subject_cache` unless documented gap.
 - Account status machine: **no** `waiting_apply`.

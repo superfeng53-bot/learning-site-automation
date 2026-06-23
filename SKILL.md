@@ -15,10 +15,10 @@ Before starting, confirm you have:
 2. **Test credentials** (one working username + password)
 3. **Domain goal** in one sentence (e.g. "刷视频课 + 自动考试 + 申请学分")
 4. **Project root path** (absolute path on disk where the codebase will live)
-5. **Credential input mode** — `split`（账号、密码分两栏，默认）或 `combined`（一栏粘贴，自动识别「账号」「密码」等字样）；写入 `data/account.json` 的 `credential_input_mode`，phase 5 同步到 `CREDENTIAL_INPUT_MODE` / Web UI。
+5. **Credential input mode** — `split`（账号、密码分两栏）或 `combined`（一栏粘贴，自动识别「账号」「密码」等字样）。**创建项目时须向用户确认**（批量运营常用 `combined`）；写入 `data/account.json` 的 `credential_input_mode`，phase 5 同步到 `CREDENTIAL_INPUT_MODE` / Web UI。**非** Web 运行时切换 — 改配置后须重启服务。
 6. (Optional) A requirements doc; if absent, use `templates/requirements.md` as the baseline.
 
-If any of (1)-(4) is missing, ask the user **once** with `AskQuestion` before invoking phase 1. Bundle **credential input mode** into that same question when credentials are provided as a single pasted line.
+If any of (1)-(4) is missing, ask the user **once** with `AskQuestion` before invoking phase 1. **Always bundle credential input mode** (`split` vs `combined`) in that same question — default `split` only when the user has no preference; if they paste credentials in one line, suggest `combined`.
 
 ## The 6 Phases
 
@@ -196,6 +196,10 @@ Bundling **gap acceptance** or **scope cut** into the normal phase-gate confirma
 - Do NOT mark phase 6 complete when only dev-mode `./start.sh` works — **`smoke_frozen.py` must pass** on the PyInstaller binary (see `phase6-packaging.md` §Packaged Artifact Smoke Test)
 - Do NOT duplicate full spec checklists in `docs/verification/` — only pass/fail + evidence
 - Do NOT merge sub-agent output without parent re-running DoD on the integrated tree
+- Do NOT assume `credential_input_mode` is missing because Web UI shows two fields — it defaults to `split` until `data/account.json` is set to `combined` and the service restarts
+- Do NOT update B/B′ account **年度学时** from local play seconds only — refresh `annual_progress_percent` / `earned_hours` from server on **each hour/unit complete** (see `progress-sync.md`)
+- Do NOT treat `extra.progress_percent === 0` as final in Web UI — fall back to `course_learning_percent` / course `percent` when annual earned hours are still zero
+- Do NOT mark B-type year task **failed** when courses are 100% and certificate `auditStatus>=0` but `annual_completion.publicNum` is still 0 — use `_resolve_year_completion` (`year_task_template.py`)
 
 ## Auxiliary Resources In This Skill
 
@@ -207,6 +211,7 @@ Bundling **gap acceptance** or **scope cut** into the normal phase-gate confirma
 - `templates/requirements.md`, `templates/requirements-year-driven.md`（B）, `templates/requirements-project-driven.md`（B′）, `templates/api-requirements.md`（A）, `templates/api-requirements-b.md`（B）, `templates/api-requirements-b-prime.md`（B′ 预填）, `templates/account.json`, `templates/project-skeleton.md`
 - `templates/agents/api-recon.md` + `templates/api-recon-agent.md`（安装说明；复制前者到 `.cursor/agents/api-recon.md`）
 - `scripts/init_project.py`, `scripts/captcha_probe.py`
+- **`progress-sync.md`** — B/B′ 课节进度写 `extra_json`、课节完成刷服务端总进度、Web 抽屉展示
 - **`templates/code/`** — 预写通用代码模板（见下方 §Code Templates）
 
 Read phase files and specs **only when entering that phase/sub-task**. Do not preload everything.
@@ -247,7 +252,10 @@ templates/code/
 ├── web/
 │   └── index.html                  # 完整 Web UI（vanilla JS，≤1600 行）── 替换占位符
 ├── pkg/
-│   └── site_adapter_template.py    # SiteAdapter 参考实现（build_plan 已接 account_pipeline）
+│   ├── site_adapter_template.py    # SiteAdapter 参考实现（build_plan 已接 account_pipeline）
+│   ├── progress_snapshot_template.py  # B/B′：年度+课节进度快照（复制为 <pkg>/progress_snapshot.py）
+│   ├── year_task_template.py       # B 型：run_year_task + _resolve_year_completion（复制为 <pkg>/year_task.py）
+│   └── client_ssl_snippet.md       # macOS Python SSL 校验失败时的 config/client 补丁说明
 ├── api/
 │   └── course_plan.py              # B′ 型：按 N_ZXF 学分上限规划课程
 ├── runner/
@@ -255,6 +263,8 @@ templates/code/
 │   └── project_runner.py           # ProjectTaskRunner（B′ 型）
 └── scripts/
     └── smoke_frozen.py             # Phase 6：打包产物 HTTP + 路径 smoke（复制到项目 scripts/）
+
+B 型 Phase 5 另复制：`service/worker_b_template.py` → `<svc>/worker.py`（含课节进度同步，见 `progress-sync.md`）。
 ```
 
 B′ 型 Phase 5 另复制：`service/project_sync.py`（Web 项目进度同步）。
@@ -272,6 +282,9 @@ B′ 型 Phase 5 另复制：`service/project_sync.py`（Web 项目进度同步�
 | `llm_subject.py` | `build_llm_mapper()`；凭证 `templates/ai_config.json` → `.run/ai_config.json` |
 | `account_pipeline.py` | 实现 `CoursePoolProvider.gather_pool`；`build_assignment_plan()` |
 | `pkg/site_adapter_template.py` | 复制为 `<pkg>/site_adapter.py`，实现拉课表/学科列表 TODO |
+| `pkg/progress_snapshot_template.py` | **B/B′**：复制为 `<pkg>/progress_snapshot.py`，对接年度完成度 + 课节树 API（`progress-sync.md`） |
+| `pkg/year_task_template.py` | **B 型**：复制为 `<pkg>/year_task.py`；含 `_resolve_year_completion`（publicNum 滞后 + 证书 auditStatus） |
+| `pkg/client_ssl_snippet.md` | Phase 1/3：`SSL_VERIFY` + `session.verify`（macOS Python 证书链问题） |
 | `session_retry.py` | 直接复制；业务 Service 用 `worker.call_with_session_retry()` |
 | `runtime.py` | 直接复制，无需修改 |
 | `scheduling.py` | **A 型**：复制并在 `config.py` 设日窗；**B 型**：不复制 |
@@ -279,10 +292,11 @@ B′ 型 Phase 5 另复制：`service/project_sync.py`（Web 项目进度同步�
 | `apply_worker.py` | **B 型**：不复制 |
 | `orchestrator.py` | 直接复制；`worker_factory` 参数传你的 `AccountWorker` 构造函数 |
 | `worker_base.py` | A 型实现 `run_pipeline()`；B 型实现 `run_year_pipeline()`（`run_once` 已内置按年循环） |
+| `worker_b_template.py` | **B 型**：复制为 `<svc>/worker.py`，替换 `<PKG>`；含 `learning_progress` / 课节完成刷 `year_status` |
 | `apply_worker.py` | 继承 `ApplyWorkerBase`，实现 `do_apply_credit(client, project_id, task)` |
 | `web/app.py` | 替换 `PLATFORM`/`LOGO_LETTER`；`run_service.py` 中注入 `app.state.store/orch/excel_io` |
 | `web/excel_io.py` | A 型保持默认；B 型将 `IMPORT_COLS` 替换为 `B_IMPORT_COLS`；B′ 型使用 `B_PRIME_IMPORT_COLS` |
-| `web/index.html` | 替换 `{{ PLATFORM }}`/`{{ LOGO_LETTER }}`；B 型替换添加面板（§14）；删除 `[OPTIONAL]` 块 |
+| `web/index.html` | 替换 `{{ PLATFORM }}`/`{{ LOGO_LETTER }}`；B 型替换添加面板（§14）+ **年度进度 tab 课节列表**（`renderYearProgressB`）；删除 `[OPTIONAL]` 块 |
 | `api/course_plan.py` | **B′ 型**：对接 `FIELD_*` 常量与 `CourseService` 判断方法；`CourseService.list_actionable_courses` 内部调用 `plan_actionable_courses` |
 | `runner/course_runner.py` | 调整阈值与字段名；A 型用 `CourseRunner`；**B 型**用 `YearTaskRunner` |
 | `runner/project_runner.py` | **B′ 型**：复制为 `<pkg>/project_task.py`；`run_account()` 遍历 pending 项目 |

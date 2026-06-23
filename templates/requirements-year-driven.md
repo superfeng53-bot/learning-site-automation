@@ -49,9 +49,11 @@
 | `target_years` | 与 DB 同步副本 |
 | `current_year` | 正在执行的年份 |
 | `target_years_done` | 已完成年度列表 |
-| **`year_status`** | `{ "<year>": { purchased, required_hours, earned_hours, completed, progress_percent, exam_id, ... } }` |
+| **`year_status`** | `{ "<year>": { required_hours, earned_hours, annual_progress_percent, course_learning_percent, progress_percent, completed, courses[{ course_id, title, percent, hours[] }], ... } }` — **课节开始/完成时从服务端刷新**（见 `progress-sync.md`） |
+| **`learning_progress`** | 当前课节：`{ year, course_id, course_title, hour_id, hour_title, chapter_title, percent, percent_name }` |
+| **`progress_percent`** | 列表进度条；展示用总进度（`annual_progress_percent` 优先，学时为 0 时回退 `course_learning_percent`） |
 | `phase` | `auth` / `course_discover` / `cert_check` / `purchase_check` / `catalog` / `video_plan` / `video_play` / `exam_run` / `done` |
-| `current_course_title` / `current_video_title` | UI 展示 |
+| `current_course_title` / `current_course_id` | UI 展示；课节开始时写入 |
 
 **无** `requirements_json` 学科槽位。
 
@@ -141,7 +143,7 @@
 
 - 添加区：**账号+密码**（`split` 分两栏 / `combined` 一栏 `textarea` 自动识别，见 `web-ui-spec.md` §6.5）、**备注、近 5 年年度 pill（多选，默认当前年）、任务模式（标准/快速）**。
 - 列表：**姓名**（登录后自动获取）、账号、备注、目标年度摘要、进度条或按年百分比。
-- 展开/抽屉：按 **`year_status`** 分年展示；**无** 学科·学分 pill 行。
+- 展开/抽屉：按 **`year_status`** 分年展示（要求学时、已获得、总进度、**课程与课节列表**）；运行中 **`learning_progress`** 高亮当前课节；**无** 学科·学分 pill 行。
 - 操作：重学 / 编辑重学 / 删除（同 A 型 §12.1）；**无** 申请队列 Tab。
 
 详见 `web-ui-spec.md` §14。
