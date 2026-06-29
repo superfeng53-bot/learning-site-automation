@@ -10,6 +10,8 @@ Goal: wrap the confirmed business endpoints the site exposes into thin `<pkg>/*.
 - [ ] `docs/API_REQUIREMENTS.md` records the user-confirmed required and optional capability scope
 - [ ] Every service uses the shared `HttpClient` (no ad-hoc `requests.post` calls)
 - [ ] All failure paths return a `SwwResponse`-shaped dataclass (or equivalent) with `ok / message / code / hint / raw`
+- [ ] **`docs/api-discovery/study.md`** records site-native **`step` + `interval`**; `normal` mode matches them with **`step >= interval`**
+- [ ] **`FAST_REPORT_SUPPORTED`** documented in `docs/API_REQUIREMENTS.md`; if `no`, fast mode is not exposed in Web/Excel
 
 ## Step 0 — Confirm Site Profile + API Capability Scope
 
@@ -256,20 +258,62 @@ if __name__ == "__main__":
 
 ## Video Progress — Site-Specific Calibration
 
-This is the most fragile part. Sites detect "fake watching" by:
+This is the most fragile part. **Do not guess** `step` / `interval` — derive them from the site's own frontend during Phase 2 browser recon.
+
+### Recon checklist（写入 `docs/api-discovery/study.md`）
+
+1. 打开一门**未学完**课节，DevTools / `Network.enable` 抓 `recordPlayTime`（或等价）请求。
+2. 从站点 JS 或连续两次上报间隔，记录：
+   - **`interval`**：两次上报之间的墙钟秒数（上报**频率**）
+   - **`step`**：每次请求 `play_time` / 进度字段的**增量**（上报**步长**）
+3. 核对站点是否还有 heartbeat、visibility、最小间隔等附加约束。
+4. **快速模式探针**（可选但推荐）：**步长不变**，仅缩短 `interval` 试 1–2 轮（使 `step/interval > 1`）；若返回 `study_time_more`、频率限制文案、进度不涨或账号异常，记 **`fast_report_supported: no`**。
+5. 把结论写入 `docs/API_REQUIREMENTS.md` **Site-Specific Notes** 与 `<pkg>/API_REFERENCE.md`；`<pkg>/study.py` 顶部常量与之对齐。
+
+| 字段 | 含义 | 示例 |
+|------|------|------|
+| `REPORT_STEP` | 每轮声称秒数（**标准/快速共用，与站点一致**） | `30` |
+| `REPORT_INTERVAL_NORMAL` | 标准模式墙钟间隔 | `30` |
+| `REPORT_INTERVAL_FAST` | 快速模式间隔（**仅缩短频率，步长不变**；须 `< REPORT_INTERVAL_NORMAL`） | `15` |
+| `FAST_REPORT_SUPPORTED` | 是否提供快速模式 | `True` / `False` |
+
+### 模式规则
+
+| 模式 | 规则 |
+|------|------|
+| **标准 `normal`** | **与站点前端一致**：`step=REPORT_STEP`、`interval=REPORT_INTERVAL_NORMAL`；须满足 **`step >= interval`**（上报速度不得慢于墙钟，通常 `step == interval` → 1× 实速） |
+| **快速 `fast`** | 仅当 `FAST_REPORT_SUPPORTED=True`；**`step` 不变**，只缩短 `interval` → `REPORT_INTERVAL_FAST`；有效倍速 = `step / interval`；须探针验证服务端接受 |
+| **站点有限制** | `FAST_REPORT_SUPPORTED=False`：Web/Excel **不提供**快速选项；导入或 API 若带 `report_mode=fast` **降级为 `normal`**（可写 remark） |
+
+**禁止**在快速模式下增大 `step` — 加速只靠提高上报频率。
+
+Sites detect "fake watching" by:
 
 - Comparing `play_time` increase vs wall-clock time (must look natural)
 - Requiring a `recordPlayTime` checkpoint at fixed intervals
 - A final `is_complete=1` call with a plausible `play_time` equal to the video duration
+- Rejecting faster-than-allowed reporting (`study_time_more`, rate-limit messages)
 
-Pattern that has worked in practice (tunable):
+Implementation pattern（占位值须换成侦察结果）:
 
 ```python
 import time
 
-def watch_video(study_svc, project_id, study_id, duration_sec, step=30, interval=31):
-    """Report progress every `interval` real seconds, claim `step` simulated seconds.
-    The frontend usually polls every 30s, hence step=30 + interval=31 (1s slack)."""
+# 来自 docs/api-discovery/study.md — 勿硬编码
+REPORT_STEP = 30
+REPORT_INTERVAL_NORMAL = 30
+REPORT_INTERVAL_FAST = 15  # 仅缩短间隔；步长与 REPORT_STEP 相同
+FAST_REPORT_SUPPORTED = True  # 探针失败则 False
+
+def resolve_report_params(report_mode: str) -> tuple[int, int]:
+    step = REPORT_STEP
+    if report_mode == "fast" and FAST_REPORT_SUPPORTED:
+        return step, REPORT_INTERVAL_FAST
+    return step, REPORT_INTERVAL_NORMAL
+
+def watch_video(study_svc, project_id, study_id, duration_sec, *, report_mode: str = "normal"):
+    step, interval = resolve_report_params(report_mode)
+    assert step >= interval, "report step must not lag behind wall clock"
     play_time = 0
     while play_time < duration_sec:
         play_time = min(play_time + step, duration_sec)
@@ -280,7 +324,7 @@ def watch_video(study_svc, project_id, study_id, duration_sec, step=30, interval
         time.sleep(interval)
 ```
 
-Tune `step`/`interval` after observing the site's own JS for a real session. If the site enforces `study_time_more`, you went too fast.
+If the site enforces `study_time_more`, you went too fast — lengthen `REPORT_INTERVAL_FAST` or disable fast mode (do not increase `REPORT_STEP`).
 
 ## Exam Pattern
 

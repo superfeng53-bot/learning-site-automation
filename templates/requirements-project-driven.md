@@ -51,7 +51,7 @@
 
 - `--dry-run`：只列计划课程，不实际上报。
 - `--max-study-rounds 1`：单课快速验证。
-- `report_mode=fast`：缩短上报间隔（如 30s）。
+- `report_mode=fast`：仅当 `FAST_REPORT_SUPPORTED=True`；**`REPORT_STEP` 不变**，仅使用更短的 `<REPORT_INTERVAL_FAST>`（须探针通过，无 `study_time_more`）。站点有限制则不提供快速模式。
 
 ## 7. 与标准 B（年度）的差异
 

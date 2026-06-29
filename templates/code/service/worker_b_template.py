@@ -15,6 +15,9 @@ from <PKG>.progress_snapshot import (
     build_learning_progress,
     build_year_progress,
     format_status_msg,
+    fraction_to_display_percent,
+    percent_label,
+    resolve_snapshot_progress,
     snapshot_hour,
 )
 from <PKG>.year_task import run_year_task
@@ -81,9 +84,44 @@ class AccountWorker(AccountWorkerBase):
         prev.update(snapshot)
         year_status[str(year)] = prev
         extra["year_status"] = year_status
-        extra["progress_percent"] = snapshot.get("progress_percent", 0)
+        extra["progress_percent"] = resolve_snapshot_progress(snapshot)
         self._store.update_extra(acc_id, extra)
         return snapshot
+
+    def _hour_snap_live(
+        self,
+        study_svc,
+        course_id: str,
+        hour: dict[str, Any],
+        play_seconds: int,
+    ) -> dict[str, Any]:
+        hour_id = str(hour.get("hour_id") or "")
+        try:
+            snap = snapshot_hour(study_svc, course_id, hour_id)
+        except Exception:
+            snap = {
+                "hour_id": hour_id,
+                "title": hour.get("title") or "",
+                "hour_title": hour.get("title") or "",
+                "chapter_title": hour.get("chapter_title") or "",
+                "percent": 0,
+                "percent_name": "0%",
+            }
+        title = str(
+            snap.get("hour_title") or snap.get("title") or hour.get("title") or "",
+        )
+        snap["title"] = title
+        snap["hour_title"] = title
+        total = int(snap.get("total_seconds") or hour.get("total_seconds") or 0)
+        learned = int(play_seconds or snap.get("learned_seconds") or 0)
+        api_frac = float(snap.get("percent") or 0)
+        live_frac = min(1.0, learned / total) if total > 0 else 0.0
+        frac = max(api_frac, live_frac)
+        snap["percent"] = frac
+        snap["percent_name"] = percent_label(frac)
+        snap["learned_seconds"] = learned
+        snap["total_seconds"] = total
+        return snap
 
     def run_year_pipeline(self, account: dict, client, year: str) -> PipelineResult:
         acc_id = account["id"]
@@ -95,6 +133,7 @@ class AccountWorker(AccountWorkerBase):
         course_svc = self._sm.get_course_service(user_id)
         study_svc = self._sm.get_study_service(user_id)
         last_tick_write = [0.0]
+        last_snapshot_write = [0.0]
 
         def on_phase(phase: str, msg: str) -> None:
             cur_extra = json.loads((self._store.get_account(acc_id) or account).get("extra_json") or "{}")
@@ -132,7 +171,7 @@ class AccountWorker(AccountWorkerBase):
                 snapshot = self._refresh_year_snapshot(
                     acc_id, user_id, year, active_course_id=course_id,
                 )
-                progress = snapshot.get("progress_percent", 0)
+                progress = resolve_snapshot_progress(snapshot)
             except Exception:
                 progress = 0
             self._merge_extra(acc_id, {
@@ -142,16 +181,12 @@ class AccountWorker(AccountWorkerBase):
                 "progress_percent": progress,
             })
 
-        def on_progress_tick(course_id: str, course_title: str, hour: dict[str, str], _play_seconds: int) -> None:
+        def on_progress_tick(course_id: str, course_title: str, hour: dict[str, str], play_seconds: int) -> None:
             now = time.monotonic()
             if now - last_tick_write[0] < self.PROGRESS_TICK_INTERVAL:
                 return
             last_tick_write[0] = now
-            hour_id = hour.get("hour_id") or ""
-            try:
-                hour_snap = snapshot_hour(study_svc, course_id, hour_id)
-            except Exception:
-                return
+            hour_snap = self._hour_snap_live(study_svc, course_id, hour, play_seconds)
             learning = build_learning_progress(
                 year=year, course_id=course_id, course_title=course_title, hour_snapshot=hour_snap,
             )
@@ -161,17 +196,22 @@ class AccountWorker(AccountWorkerBase):
                 hour_snap.get("percent_name") or "",
             )
             self._store.update_account_status(acc_id, "running", status)
-            cur = self._store.get_account(acc_id) or {}
-            cur_extra = json.loads(cur.get("extra_json") or "{}")
-            tick_pct = 0
-            pct_raw = hour_snap.get("percent")
-            if pct_raw is not None:
-                pct_val = float(pct_raw)
-                tick_pct = 100 if pct_val >= 1 else round(pct_val * 100)
-            display = max(int(cur_extra.get("progress_percent") or 0), tick_pct)
             patch: dict[str, Any] = {"learning_progress": learning}
-            if display > int(cur_extra.get("progress_percent") or 0):
-                patch["progress_percent"] = display
+            if now - last_snapshot_write[0] >= 60.0:
+                last_snapshot_write[0] = now
+                try:
+                    snapshot = self._refresh_year_snapshot(
+                        acc_id, user_id, year, active_course_id=course_id,
+                    )
+                    patch["progress_percent"] = resolve_snapshot_progress(snapshot)
+                    ys = dict(
+                        json.loads((self._store.get_account(acc_id) or {}).get("extra_json") or "{}")
+                        .get("year_status") or {},
+                    )
+                    ys[str(year)] = {**(ys.get(str(year)) or {}), **snapshot}
+                    patch["year_status"] = ys
+                except Exception:
+                    pass
             self._merge_extra(acc_id, patch)
 
         def on_hour_complete(course_id: str, course_title: str, hour: dict[str, str], _resp) -> None:
@@ -194,7 +234,7 @@ class AccountWorker(AccountWorkerBase):
             self._store.update_account_status(acc_id, "running", status)
             self._merge_extra(acc_id, {
                 "learning_progress": learning,
-                "progress_percent": snapshot.get("progress_percent", 0),
+                "progress_percent": resolve_snapshot_progress(snapshot),
             })
 
         def _execute(_client):
@@ -236,8 +276,8 @@ class AccountWorker(AccountWorkerBase):
         })
         year_status[str(year)] = year_entry
         extra_updates["year_status"] = year_status
-        extra_updates["progress_percent"] = final_snapshot.get(
-            "progress_percent", year_entry.get("progress_percent", 0),
+        extra_updates["progress_percent"] = resolve_snapshot_progress(
+            final_snapshot or year_entry,
         )
         if result.certificate:
             extra_updates["certificate_status"] = result.certificate

@@ -15,9 +15,9 @@
 |------|------|----------|
 | **年度学时进度** `annual_progress_percent` | 服务端 `annual_completion`（如 `publicNum / 30`） | 课程完成、学时计入后 |
 | **课程学习进度** `course_learning_percent` | 已购课程 `percent` 平均值 | 学习中即有值 |
-| **展示用总进度** `progress_percent` | `annual` 优先；`annual==0` 时回退 `course_learning_percent` | 见 `build_year_progress` |
+| **展示用总进度** `progress_percent` | `annual` 优先；`annual==0` 时回退 `course_learning_percent`（**全课程均值**，含课节推算） | 见 `build_year_progress` |
 
-详情抽屉「已获得」仍显示真实 `earned_hours`；「总进度」与列表条使用展示用 `progress_percent`（学时未计入时显示课程进度并标注「（学习中）」）。
+详情抽屉「已获得」仍显示真实 `earned_hours`；「总进度」与列表条使用展示用 `progress_percent`（学时未计入时显示**年度课程学习均值**并标注「（学习中）」）。**禁止**用当前课节 `learning_progress.percent` 充当总进度。
 
 ## 年度完成判定（`run_year_task`）
 
@@ -95,7 +95,9 @@
 
 ```python
 annual_pct = round(100 * earned_hours / required)  # 来自 annual_completion API
-course_learning_pct = average(in-progress course percent) * 100
+# course_learning_pct = 全部已购课程有效进度均值（已完成=100%；未完成可从课节 percent 均值推算）
+effective = [_effective_course_fraction(c) for c in courses]
+course_learning_pct = round(100 * sum(effective) / len(effective))
 display_pct = annual_pct if annual_pct > 0 else course_learning_pct
 ```
 
@@ -106,7 +108,7 @@ display_pct = annual_pct if annual_pct > 0 else course_learning_pct
 核心逻辑：
 
 1. `on_hour_start` → `snapshot_hour` + **`build_year_progress`（刷新课程级进度）** → 写 `learning_progress` + `progress_percent` + 更新 `status_msg`
-2. `on_progress_tick`（节流）→ 更新 `learning_progress` + `status_msg`；**若当前课节进度高于已存 `progress_percent`，轻量抬升列表进度**（不调年度 API）
+2. `on_progress_tick`（节流）→ **仅**更新 `learning_progress` + `status_msg`；每 ≥60s 调 `build_year_progress` 刷新 `year_status` + `progress_percent`（**禁止**把课节 frac 写入 `progress_percent`）
 3. **`on_hour_complete` → `build_year_progress(..., active_course_id=...)` → 合并进 `year_status[year]` + `progress_percent`**
 4. 年度任务结束 → 再刷一次 `build_year_progress`
 
@@ -122,7 +124,7 @@ display_pct = annual_pct if annual_pct > 0 else course_learning_pct
 
 - **基本信息** tab：`正在学习` 一行（来自 `learning_progress`）
 - **年度进度** tab：`renderYearProgressB()` + `yearDisplayPercent()` — 年度总进度条 + 课程块 + 课节列表（高亮 `learning_progress.hour_id`）；学时未计入时总进度显示课程进度并标注「（学习中）」
-- 列表 `progressPercent()`：**勿**在 `progress_percent===0` 时直接返回 — 用 `yearDisplayPercent()` 回退到 `course_learning_percent` / 课程 `percent` / `learning_progress.percent`
+- 列表 `progressPercent()`：**勿**在 `progress_percent===0` 时直接返回 — 用 `yearDisplayPercent()` 回退到 `course_learning_percent` / 课程 `percent`；**勿**回退 `learning_progress.percent`（那是课节进度）
 
 CSS 类：`.course-block`, `.course-active`, `.unit-row`, `.unit-row.active`, `.unit-bar` — 见 `templates/code/web/index.html`。
 
@@ -135,4 +137,5 @@ CSS 类：`.course-block`, `.course-active`, `.unit-row`, `.unit-row.active`, `.
 - **不要**在 Web UI 做「分列 / 一栏凭证」运行时切换 — `credential_input_mode` 是**项目级**配置（`data/account.json` + 重启服务）。
 - **不要**仅用本地 `play_seconds` 推算**年度学时** — 课节完成必须调站点年度/项目完成度 API。
 - **不要**每个 tick 都拉全量课表 — 课节完成（及课节开始时的课程快照）才刷新 `year_status`；tick 只更新 `learning_progress` 与可选的列表展示进度。
-- **不要**在 `progressPercent()` 里见到 `extra.progress_percent === 0` 就返回 — 课程明细里可能有非零学习进度。
+- **不要**把课节 `learning_progress.percent` 写入 `extra.progress_percent` 或用作 Web「总进度」— 总进度只来自 `build_year_progress`（年度学时 / 全课程均值）
+- **不要**在 `progressPercent()` / `yearDisplayPercent()` 里回退 `learning_progress.percent`

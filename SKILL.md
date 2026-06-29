@@ -191,15 +191,17 @@ Bundling **gap acceptance** or **scope cut** into the normal phase-gate confirma
 - Do NOT reorder export columns relative to import template
 - Do NOT use emoji in UI text; use plain Chinese labels
 - Do NOT skip `ui.confirm` / `ui.toast` patterns in web UI
-- Do NOT ship `index.html` with `#tableWrap` left at `opacity:0` after data load, or with IIFE handlers not on `window` — both break list visibility and drawer clicks (see `web-ui-spec.md` §8.15–§8.16)
+- Do NOT ship `index.html` with `#tableWrap` left at `opacity:0` after data load, with IIFE handlers not on `window`, or with viewport `thead { top: var(--header-h) }` + `border-collapse: collapse` — the first three break list visibility / drawer clicks; the last hides the first account row (see `web-ui-spec.md` §6.7、§8.15–§8.16)
 - Do NOT mark a phase complete with unchecked DoD or unaccepted gaps in `docs/gaps/`
 - Do NOT mark phase 6 complete when only dev-mode `./start.sh` works — **`smoke_frozen.py` must pass** on the PyInstaller binary (see `phase6-packaging.md` §Packaged Artifact Smoke Test)
 - Do NOT duplicate full spec checklists in `docs/verification/` — only pass/fail + evidence
 - Do NOT merge sub-agent output without parent re-running DoD on the integrated tree
 - Do NOT assume `credential_input_mode` is missing because Web UI shows two fields — it defaults to `split` until `data/account.json` is set to `combined` and the service restarts
 - Do NOT update B/B′ account **年度学时** from local play seconds only — refresh `annual_progress_percent` / `earned_hours` from server on **each hour/unit complete** (see `progress-sync.md`)
+- Do NOT write **hour-level** `learning_progress.percent` into `extra.progress_percent` or use it as drawer/list **总进度** — only `build_year_progress` (`annual_progress_percent` / `course_learning_percent` aggregate)
 - Do NOT treat `extra.progress_percent === 0` as final in Web UI — fall back to `course_learning_percent` / course `percent` when annual earned hours are still zero
 - Do NOT mark B-type year task **failed** when courses are 100% and certificate `auditStatus>=0` but `annual_completion.publicNum` is still 0 — use `_resolve_year_completion` (`year_task_template.py`)
+- Do NOT hardcode video **`step`/`interval`** without Phase 2 recon of the site's frontend — **`normal`** must match site-native values with **`step >= interval`**; **`fast`** must keep **`step` unchanged** and only shorten **`interval`**; do NOT ship **`report_mode=fast`** when recon shows the site rejects faster reporting (`study_time_more`, rate limits); see `phase2-api-tools.md` § Video Progress
 
 ## Auxiliary Resources In This Skill
 
@@ -308,6 +310,6 @@ B′ 型 Phase 5 另复制：`service/project_sync.py`（Web 项目进度同步�
 
 1. **先复制，再对接**：在 phase 4/5 开始时，先把对应模板复制到项目，再填 TODO，不要从头写。
 2. **`[OPTIONAL:xxx]` 注释**：站点不需要某功能时，整段删除（含开始/结束注释行）；保留的功能只需取消注释或保持原样。
-3. **`index.html` 画像改造**：`site_profile=B` → `web-ui-spec.md §14` 年度 pill；`site_profile=B_prime` → `§15` 项目驱动（无年度、有同步项目按钮）；A 型保持学科表单。三种画像共用分页、抽屉 z-index、复制日志修复（见 §7.4）。
+3. **`index.html` 画像改造**：`site_profile=B` → `web-ui-spec.md §14` 年度 pill；`site_profile=B_prime` → `§15` 项目驱动（无年度、有同步项目按钮）；A 型保持学科表单。三种画像共用分页、抽屉 z-index、复制日志、**§6.7 列表内部滚动**（勿改回 `thead top:var(--header-h)` + `border-collapse:collapse`）。
 4. **web-ui-spec.md 仍是权威**：模板是规范的实现。如果两者冲突，以规范为准，修模板。
 5. **不要把对接代码写进模板文件**：site-specific 代码（API 端点、字段名、错误码）只在子类/caller 中，不要反向修改 `templates/code/` 里的文件。

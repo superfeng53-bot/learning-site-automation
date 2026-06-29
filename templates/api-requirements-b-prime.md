@@ -37,7 +37,10 @@
 - 课程学分字段：<待侦察，常见 `N_XF`>
 - 最低学习时长字段：<待侦察，常见 `zdxxsc_fz`（分钟）>
 - 已学时长字段：<待侦察，常见 `xxsj_fz`（分钟）>
-- 上报间隔：<待侦察，常见 90s 标准 / 30s 快速>
+- 学习上报步长/频率（Phase 2 侦察）：
+  - 站点原生：`step=<N>s`，`interval=<M>s`
+  - 标准 `normal`：`REPORT_STEP` + `REPORT_INTERVAL_NORMAL`，与站点一致，`step >= interval`
+  - 快速 `fast`：`FAST_REPORT_SUPPORTED=<yes|no>`；**步长不变**，仅 `REPORT_INTERVAL_FAST` 更短；若 `no` 则 Web/Excel 不提供快速
 - 考试答案格式：<待侦察，常见 `C_ZQDA` 或 `TMXX.C_SFZQDA=1`>
 
 ## Phase 2 Domain Plan

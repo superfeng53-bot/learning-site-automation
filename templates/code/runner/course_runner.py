@@ -70,9 +70,9 @@ class CourseRunner:
 
     #: 视频完成阈值（已播放 / 总时长）。根据站点 JS 逻辑调整。
     WATCH_THRESHOLD = 0.95
-    #: 进度探针：模拟步长与墙钟间隔（与 phase2 watch_video 校准值一致）。
+    #: 进度探针：模拟步长与墙钟间隔（与 phase2 站点侦察 step/interval 一致，须 step >= interval）。
     PROBE_STEP = 30
-    PROBE_INTERVAL = 31
+    PROBE_INTERVAL = 30
 
     def __init__(self, course_svc, study_svc, exam_svc=None, credit_svc=None):
         self.course  = course_svc

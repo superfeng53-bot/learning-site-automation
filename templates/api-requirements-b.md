@@ -31,7 +31,10 @@
 
 - 公需 `parent_id`（或等价参数）：<待侦察填写>
 - 购课策略 `not_purchased_policy`：<待侦察填写>
-- `report_mode`：标准 / 快速（Web 与 Excel 已支持）
+- 学习上报（Phase 2 侦察填写）：
+  - 站点原生：`step=<N>s`，`interval=<M>s`（`docs/api-discovery/study.md`）
+  - 标准 `normal`：`REPORT_STEP` + `REPORT_INTERVAL_NORMAL`，与站点一致，`step >= interval`
+  - 快速 `fast`：`FAST_REPORT_SUPPORTED=<yes|no>`；**步长不变**，仅 `REPORT_INTERVAL_FAST` 更短；若 `no` 则 Web/Excel 不提供快速，导入 `快速` 降级为标准
 
 ## Phase 2 Domain Plan
 

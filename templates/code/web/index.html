@@ -28,7 +28,7 @@
   --ease:cubic-bezier(.2,.8,.2,1); --ease-out:cubic-bezier(0,.7,.3,1);
   --font:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei","Helvetica Neue",Helvetica,Arial,sans-serif;
   --font-mono:ui-monospace,SFMono-Regular,"JetBrains Mono","Cascadia Code",Consolas,"Liberation Mono",Menlo,monospace;
-  --header-h:60px; --container:1320px;
+  --header-h:60px; --container:1320px; --list-table-max-h:min(560px,calc(100vh - var(--header-h) - 220px));
 }
 [data-theme="dark"],@media(prefers-color-scheme:dark){:root:not([data-theme]){
   --c-bg:#0d0f16; --c-surface:#161921; --c-surface-2:#1c1f2c; --c-surface-3:#21263a;
@@ -46,7 +46,7 @@
 }}
 /* ── Base ──────────────────────────────────────────────────────────────────── */
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:var(--font);font-size:14px;line-height:1.55;color:var(--c-text);background:var(--c-bg);-webkit-font-smoothing:antialiased}
+body{font-family:var(--font);font-size:14px;line-height:1.55;color:var(--c-text);background:var(--c-bg);-webkit-font-smoothing:antialiased;scroll-padding-top:calc(var(--header-h) + 8px)}
 h2{font-size:15px;font-weight:600} h3{font-size:13px;font-weight:600;letter-spacing:.3px}
 small{font-size:12px;color:var(--c-text-muted)}
 code{font-family:var(--font-mono);font-size:12px;background:var(--c-surface-2);border-radius:var(--r-xs);padding:1px 4px}
@@ -136,14 +136,16 @@ kbd{border:1px solid var(--c-border-strong);border-radius:4px;padding:1px 6px;fo
 .segmented button[aria-pressed="true"]{background:var(--c-surface);color:var(--c-text);box-shadow:var(--shadow-xs)}
 .toolbar-count{font-size:12px;color:var(--c-text-muted);margin-left:auto;white-space:nowrap}
 /* ── Table ──────────────────────────────────────────────────────────────────── */
+#listPanel .table-wrap{overflow:auto;max-height:var(--list-table-max-h);-webkit-overflow-scrolling:touch}
+#listPanel .toolbar{position:relative;z-index:3;background:var(--c-surface)}
 .table-wrap{overflow-x:auto}
-table{width:100%;border-collapse:collapse;table-layout:fixed}
-thead th{padding:10px 14px;font-size:11.5px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;color:var(--c-text-muted);background:var(--c-surface-2);border-bottom:1px solid var(--c-border);white-space:nowrap;position:sticky;top:var(--header-h);z-index:10}
-tbody tr{border-bottom:1px solid var(--c-border);transition:background var(--dur-fast)}
+table{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
+thead th{padding:10px 14px;font-size:11.5px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;color:var(--c-text-muted);background:var(--c-surface-2);white-space:nowrap;position:sticky;top:0;z-index:2;box-shadow:inset 0 -1px 0 var(--c-border)}
+tbody tr{transition:background var(--dur-fast)}
 tbody tr:hover{background:var(--c-surface-2)}
 tbody tr.is-failed{background:rgba(220,38,38,.03)}
 tbody tr.is-failed:hover{background:rgba(220,38,38,.06)}
-tbody td{padding:12px 14px;font-size:13.5px;vertical-align:middle}
+tbody td{padding:12px 14px;font-size:13.5px;vertical-align:middle;box-shadow:inset 0 -1px 0 var(--c-border)}
 .td-name{width:100px;font-weight:600;cursor:pointer;color:var(--c-primary)}
 .td-name:hover{text-decoration:underline}
 .td-user{width:140px;font-family:var(--font-mono);font-size:12.5px}
@@ -797,23 +799,50 @@ function yearSummary(a){
   }catch{return '—';}
 }
 
+function hourTitle(h){
+  return (h&&(h.hour_title||h.title))||'课节';
+}
+function fractionToDisplayPercent(p){
+  const n=Number(p||0);
+  if(n<=0) return 0;
+  if(n>=1) return 100;
+  const pct=n*100;
+  if(pct<1) return Math.round(pct*10)/10;
+  return Math.round(pct);
+}
+function percentFromName(name){
+  if(!name) return 0;
+  const m=String(name).match(/([\d.]+)\s*%/);
+  if(!m) return 0;
+  const v=Number(m[1]);
+  return Number.isFinite(v)?v:0;
+}
+function progressBarWidth(p){
+  const d=Number(p||0);
+  if(d<=0) return 0;
+  return Math.min(100, Math.max(d<1?1:d, d));
+}
+function formatDisplayPercent(p){
+  const n=Number(p||0);
+  if(n<=0) return '0';
+  if(n<1) return n.toFixed(1);
+  return String(Math.round(n));
+}
+
 function yearDisplayPercent(y, lp){
   const annual=y.annual_progress_percent!=null?Number(y.annual_progress_percent):
-    (y.required_hours>0?Math.round(100*(y.earned_hours||0)/y.required_hours):
+    (y.required_hours>0?fractionToDisplayPercent((y.earned_hours||0)/y.required_hours):
       (y.progress_percent!=null?Number(y.progress_percent):0));
   if(annual>0) return annual;
   if(y.progress_percent>0) return Number(y.progress_percent);
   if(y.course_learning_percent>0) return Number(y.course_learning_percent);
   const courses=y.courses||[];
   const cpcts=courses.map(c=>{
-    const p=Number(c.percent||0);
-    return p>=1?100:Math.round(p*100);
+    const named=percentFromName(c.percent_name);
+    if(named>0) return named;
+    return fractionToDisplayPercent(c.percent||0);
   }).filter(p=>p>0);
-  if(cpcts.length) return Math.round(cpcts.reduce((s,n)=>s+n,0)/cpcts.length);
-  if(lp&&String(lp.year||'')===String(y.year||'')&&lp.percent!=null){
-    const p=Number(lp.percent||0);
-    return p>=1?100:Math.round(p*100);
-  }
+  if(cpcts.length) return Math.max(...cpcts);
   return 0;
 }
 function progressPercent(a){
@@ -828,11 +857,7 @@ function progressPercent(a){
       if(best>0) return best;
     }
     if(extra.progress_percent>0) return Number(extra.progress_percent);
-    if(lp.percent!=null){
-      const p=Number(lp.percent||0);
-      if(p>0) return p>=1?100:Math.round(p*100);
-    }
-    return Number(extra.progress_percent)||0;
+    return 0;
   }catch{return 0;}
 }
 
@@ -843,12 +868,11 @@ function hourPctLabel(h){
   return Math.round(p*100)+'%';
 }
 function hourBarWidth(h){
-  const p=Number(h&&h.percent||0);
-  return Math.min(100, Math.round(p>=1?100:p*100));
+  return progressBarWidth(fractionToDisplayPercent(h&&h.percent));
 }
 function courseBarWidth(c){
-  const p=Number(c&&c.percent||0);
-  return Math.min(100, Math.round(p>=1?100:p*100));
+  const named=percentFromName(c&&c.percent_name);
+  return progressBarWidth(named>0?named:fractionToDisplayPercent(c&&c.percent));
 }
 function renderCourseList(courses, lp, year){
   if(!courses||!courses.length) return '';
@@ -884,7 +908,7 @@ function renderYearProgressB(extra){
     if(lp.course_title){
       const pct=hourPctLabel(lp);
       return `<div class="year-group"><h3>${esc(lp.year||'当前')} 年</h3>
-        <p style="font-size:13px;color:var(--c-text-muted)">正在学习：${esc(lp.course_title)} · ${esc(lp.hour_title||'课节')} ${esc(pct)}</p></div>`;
+        <p style="font-size:13px;color:var(--c-text-muted)">正在学习：${esc(lp.course_title)} · ${esc(hourTitle(lp))} ${esc(lp.percent_name||hourPctLabel(lp))}</p></div>`;
     }
     return '<p style="color:var(--c-text-muted);font-size:13px">暂无年度进度（账号运行后将自动同步）</p>';
   }
@@ -895,15 +919,15 @@ function renderYearProgressB(extra){
       (y.required_hours>0?Math.round(100*(y.earned_hours||0)/y.required_hours):0);
     const coursesHtml=renderCourseList(y.courses||[], lp, yr);
     const learningLine=(String(lp.year||'')===String(yr)&&lp.course_title)
-      ?`<p style="font-size:12.5px;color:var(--c-primary);margin:8px 0 0">正在学：${esc(lp.course_title)} · ${esc(lp.chapter_title?lp.chapter_title+' · ':'')}${esc(lp.hour_title||'课节')} ${esc(lp.percent_name||hourPctLabel(lp))}</p>`:'';
+      ?`<p style="font-size:12.5px;color:var(--c-primary);margin:8px 0 0">正在学：${esc(lp.course_title)} · ${esc(lp.chapter_title?lp.chapter_title+' · ':'')}${esc(hourTitle(lp))} ${esc(lp.percent_name||hourPctLabel(lp))}</p>`:'';
     return `<div class="year-group"><h3>${esc(yr)} 年</h3>
       <div class="year-summary">
         <dl class="kv" style="margin-bottom:8px">
           <dt>要求学时</dt><dd>${y.required_hours??'—'}</dd>
           <dt>已获得</dt><dd>${y.earned_hours??'—'}</dd>
-          <dt>总进度</dt><dd>${pct}% ${y.completed?'（已完成）':annualOnly<pct?'（学习中）':''}</dd>
+          <dt>总进度</dt><dd>${formatDisplayPercent(pct)}% ${y.completed?'（已完成）':annualOnly<pct?'（学习中）':''}</dd>
         </dl>
-        <div class="progress-bar"><span style="width:${Math.min(100,pct)}%"></span></div>
+        <div class="progress-bar"><span style="width:${progressBarWidth(pct)}%"></span></div>
         ${learningLine}
       </div>
       ${coursesHtml||'<p style="font-size:12.5px;color:var(--c-text-muted);margin-top:8px">暂无课程明细</p>'}
@@ -941,7 +965,7 @@ function rowHtml(a){
       <td class="td-msg">${esc(extra.remark||'—')}</td>
       <td class="td-years">${esc(yearSummary(a))}</td>
       <td class="td-status">${pillHtml(a.status)}</td>
-      <td class="td-progress" title="${esc(a.status_msg||'')}"><span style="font-size:12px;color:var(--c-text-muted)">${pct}%</span><div class="progress-bar"><span style="width:${pct}%"></span></div></td>
+      <td class="td-progress" title="${esc(a.status_msg||'')}"><span style="font-size:12px;color:var(--c-text-muted)">${formatDisplayPercent(pct)}%</span><div class="progress-bar"><span style="width:${progressBarWidth(pct)}%"></span></div></td>
       <td class="td-actions">${acts}</td>
     </tr>`;
   }
@@ -954,7 +978,7 @@ function rowHtml(a){
       <td class="td-user">${esc(a.username)}</td>
       <td class="td-msg">${esc(extra.remark||'—')}</td>
       <td class="td-status">${pillHtml(a.status)}</td>
-      <td class="td-progress" title="${esc(a.status_msg||'')}"><span style="font-size:12px;color:var(--c-text-muted)">${pct}%</span><div class="progress-bar"><span style="width:${pct}%"></span></div></td>
+      <td class="td-progress" title="${esc(a.status_msg||'')}"><span style="font-size:12px;color:var(--c-text-muted)">${formatDisplayPercent(pct)}%</span><div class="progress-bar"><span style="width:${progressBarWidth(pct)}%"></span></div></td>
       <td class="td-actions">${acts}</td>
     </tr>`;
   }
@@ -1461,7 +1485,7 @@ function renderDrawerContent(a){
       <dt>状态</dt><dd>${pillHtml(a.status)}</dd>
       <dt>说明</dt><dd>${esc(a.status_msg||'—')}</dd>
       <dt>当前阶段</dt><dd>${esc(extra.phase||'—')}</dd>
-      ${extra.learning_progress&&extra.learning_progress.course_title?`<dt>正在学习</dt><dd>${esc(extra.learning_progress.course_title)} · ${esc(extra.learning_progress.hour_title||'课节')} ${esc(extra.learning_progress.percent_name||hourPctLabel(extra.learning_progress))}</dd>`:''}
+      ${extra.learning_progress&&extra.learning_progress.course_title?`<dt>正在学习</dt><dd>${esc(extra.learning_progress.course_title)} · ${esc(hourTitle(extra.learning_progress))} ${esc(extra.learning_progress.percent_name||hourPctLabel(extra.learning_progress))}</dd>`:''}
       <dt>重试次数</dt><dd>${a.retry_count||0}</dd>
       <dt>创建时间</dt><dd>${fmtTs(a.created_at)}</dd>
       <dt>更新时间</dt><dd>${fmtTs(a.updated_at)}</dd>

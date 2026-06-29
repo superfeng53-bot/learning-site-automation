@@ -36,7 +36,9 @@ When `docs/API_REQUIREMENTS.md` specifies **B_prime — 项目驱动型** (`site
 - [ ] `<pkg>/project_task.py` from `templates/code/runner/project_runner.py` — `ProjectTaskRunner.run_account()`
 - [ ] `CourseService.list_actionable_courses(project_id)` delegates to `plan_actionable_courses()`
 - [ ] `run_course.py` CLI: `--dry-run` lists planned courses only; `--max-study-rounds 1` for single-lesson smoke
-- [ ] `report_mode=fast` shortens study report interval (e.g. 90s → 30s)
+- [ ] **`report_mode=normal`** uses site-native `step`/`interval` from Phase 2 recon (`step >= interval`, typically 1× real time)
+- [ ] **`report_mode=fast`** only when `FAST_REPORT_SUPPORTED=True`；**步长不变**，仅 `REPORT_INTERVAL_FAST < REPORT_INTERVAL_NORMAL`；探针无 `study_time_more`
+- [ ] When `FAST_REPORT_SUPPORTED=False`, Web/Excel omit fast mode and coerce `fast` → `normal`
 - [ ] **Do not** generate `YearTaskRunner`, `run_year.py`, or `target_years` handling
 
 Phase 5 worker calls `ProjectTaskRunner.run_account()` instead of year loop or `CourseRunner`.

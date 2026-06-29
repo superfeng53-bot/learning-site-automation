@@ -45,7 +45,7 @@
 |------|------|
 | `cookies` | 会话 |
 | `user_profile` / `real_name` / `id_card` | 登录后解析 |
-| `report_mode` | `normal` / `fast`（上报间隔，见 `<REPORT_INTERVAL>`） |
+| `report_mode` | `normal` / `fast`（**标准**=站点步长+频率 1:1；**快速**=步长不变、仅缩短间隔；见 `phase2-api-tools.md` § Video Progress） |
 | `target_years` | 与 DB 同步副本 |
 | `current_year` | 正在执行的年份 |
 | `target_years_done` | 已完成年度列表 |
@@ -169,4 +169,4 @@
 
 ---
 
-*填空：`<PLATFORM>` / `<SITE_URL>` / `<公需 parent_id>` / `<REPORT_INTERVAL_NORMAL>` / `<REPORT_INTERVAL_FAST>` / `<NOT_PURCHASED_POLICY>` / `<MAX_WORKERS>` / `<RUN_YEAR_TASK>` / `<CERTIFICATE_API>`*
+*填空：`<PLATFORM>` / `<SITE_URL>` / `<公需 parent_id>` / `<REPORT_STEP>` / `<REPORT_INTERVAL_NORMAL>` / `<REPORT_INTERVAL_FAST>` / `<FAST_REPORT_SUPPORTED yes|no>` / `<NOT_PURCHASED_POLICY>` / `<MAX_WORKERS>` / `<RUN_YEAR_TASK>` / `<CERTIFICATE_API>`*

@@ -12,6 +12,33 @@ from typing import Any
 TARGET_PUBLIC_HOURS = 30
 
 
+def fraction_to_display_percent(frac: float) -> float:
+    if frac <= 0:
+        return 0.0
+    if frac >= 1:
+        return 100.0
+    pct = frac * 100
+    if pct < 1:
+        return round(pct, 1)
+    return float(round(pct))
+
+
+def resolve_snapshot_progress(snapshot: dict[str, Any]) -> float:
+    for key in ("progress_percent", "course_learning_percent", "annual_progress_percent"):
+        val = float(snapshot.get(key) or 0)
+        if val > 0:
+            return val
+    courses = snapshot.get("courses") or []
+    best_frac = max((float(c.get("percent") or 0) for c in courses), default=0.0)
+    if best_frac > 0:
+        return fraction_to_display_percent(best_frac)
+    required = float(snapshot.get("required_hours") or 0)
+    earned = float(snapshot.get("earned_hours") or 0)
+    if required > 0 and earned > 0:
+        return fraction_to_display_percent(earned / required)
+    return 0.0
+
+
 def _float_percent(raw: Any) -> float:
     try:
         return float(raw or 0)
@@ -20,11 +47,16 @@ def _float_percent(raw: Any) -> float:
 
 
 def percent_label(percent: float, percent_name: str = "") -> str:
-    if percent_name:
+    if percent_name and float(percent or 0) <= 0:
         return str(percent_name)
     if percent >= 1:
         return "100%"
-    return f"{int(round(percent * 100))}%"
+    pct = float(percent) * 100
+    if pct <= 0:
+        return "0%"
+    if pct < 1:
+        return f"{round(pct, 1)}%"
+    return f"{int(round(pct))}%"
 
 
 def collect_learn_hours(study_svc, course_id: str) -> list[dict[str, Any]]:
@@ -37,6 +69,7 @@ def collect_learn_hours(study_svc, course_id: str) -> list[dict[str, Any]]:
             hours.append({
                 "hour_id": str(child.get("id") or ""),
                 "title": str(child.get("title") or child.get("name") or ""),
+                "hour_title": str(child.get("title") or child.get("name") or ""),
                 "chapter_title": chapter_title,
                 "percent": pct,
                 "percent_name": str(child.get("percentName") or percent_label(pct)),
@@ -78,6 +111,23 @@ def snapshot_hour(
         "seconds": getattr(hp, "seconds", 0),
         "duration": getattr(hp, "duration", 0),
     }
+
+
+def _effective_course_fraction(entry: dict[str, Any]) -> float:
+    """课程有效进度：已完成=1；否则取课程 percent，为 0 时从课节均值推算。"""
+    if entry.get("finished"):
+        return 1.0
+    pct = _float_percent(entry.get("percent"))
+    hours = entry.get("hours") or []
+    if hours:
+        hour_pcts = [float(h.get("percent") or 0) for h in hours]
+        if hour_pcts:
+            derived = sum(hour_pcts) / len(hour_pcts)
+            if derived > pct:
+                pct = derived
+                entry["percent"] = pct
+                entry["percent_name"] = percent_label(pct)
+    return pct
 
 
 def build_year_progress(
@@ -136,15 +186,8 @@ def build_year_progress(
 
     course_learning_percent = 0
     if courses:
-        active_pcts = [
-            _float_percent(c.get("percent"))
-            for c in courses
-            if not c.get("finished") and _float_percent(c.get("percent")) > 0
-        ]
-        if active_pcts:
-            course_learning_percent = round(100 * sum(active_pcts) / len(active_pcts))
-        elif all(c.get("finished") for c in courses):
-            course_learning_percent = 100
+        effective = [_effective_course_fraction(c) for c in courses]
+        course_learning_percent = round(100 * sum(effective) / len(effective))
 
     # 展示用总进度：已获得学时为 0 时回退到课程学习进度（避免列表长期显示 0%）
     display_percent = progress_percent

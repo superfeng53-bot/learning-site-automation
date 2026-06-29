@@ -163,7 +163,11 @@ Phase 2 `AskQuestion` 中 **不要** 勾选「学科列表 / 分类列表」除�
 
 ### B.5 Excel
 
-见 `excel-spec.md` §2B。导入列：`账号 | 密码 | 备注 | 目标年度 | 任务模式`（`combined` 时首列「账号密码」）；年度分隔符 `,，;` 或空白；模式别名 `快速/fast` → `report_mode=fast`。
+见 `excel-spec.md` §2B。导入列：`账号 | 密码 | 备注 | 目标年度 | 任务模式`（`combined` 时首列「账号密码」）；年度分隔符 `,，;` 或空白；模式别名 `快速/fast` → `report_mode=fast`（**仅当** `FAST_REPORT_SUPPORTED=True`，否则降级为标准）。
+
+### B.4.1 学习上报步长/频率
+
+Phase 2 须从站点前端侦察 **`step`（步长）** 与 **`interval`（频率）**，写入 `docs/api-discovery/study.md`。`report_mode=normal` 与站点 1:1 对齐（`step >= interval`）。`report_mode=fast` **步长不变、仅缩短间隔**；仅当探针确认站点接受；有限制则 `FAST_REPORT_SUPPORTED=False`。见 `phase2-api-tools.md` § Video Progress。
 
 ### B.6 Phase 5 数据模型差异
 
@@ -184,7 +188,8 @@ Worker：`AccountWorker.run_once` 调用 `YearTaskRunner.run(account)`，内部�
 | 陷阱 | 正确做法 |
 |------|----------|
 | `publicNum=0` 但课程 100%、证书已通过 | `year_task._resolve_year_completion`：优先看 `auditStatus`，勿仅认 `publicNum`（`progress-sync.md`） |
-| 列表进度 0%、详情课程有进度 | `build_year_progress` 展示进度回退 `course_learning_percent`；Web `yearDisplayPercent()` |
+| 列表进度 0%、详情课程有进度 | `build_year_progress` 展示进度回退 `course_learning_percent`（**全课程均值**，非课节 percent）；Web `yearDisplayPercent()` **勿**回退 `learning_progress.percent` |
+| 上报比实速慢 / 快速模式被拒 | Phase 2 侦察 `REPORT_STEP`/`interval`；`normal` 须 `step >= interval`；**快速只缩短 interval、不改 step**；`study_time_more` 等则 `FAST_REPORT_SUPPORTED=False` |
 | macOS Python `SSLCertVerificationError` | `client_ssl_snippet.md`：`SSL_VERIFY` 默认关，环境变量可强制开 |
 | 证书已提交仍走 `cert_apply` | `auditStatus >= 0` 时跳过重复申请 |
 

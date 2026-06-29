@@ -24,8 +24,9 @@ class LessonPhase(str, Enum):
 
 
 class CourseRunner:
+    #: 进度探针：与 phase2 侦察的站点 native step/interval 一致（须 step >= interval）。
     PROBE_STEP = 30
-    PROBE_INTERVAL = 31
+    PROBE_INTERVAL = 30
 
     def __init__(self, course_svc, study_svc, exam_svc=None, credit_svc=None,
                  *, complete_ratio: float = 0.95):

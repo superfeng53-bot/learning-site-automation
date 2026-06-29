@@ -135,6 +135,7 @@
 /* 布局 */
 --header-h:  60px;
 --container: 1320px;
+--list-table-max-h: min(560px, calc(100vh - var(--header-h) - 220px));
 ```
 
 ### 暗色覆盖（仅列差异）
@@ -175,7 +176,8 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: var(--font); font-size: 14px; line-height: 1.55;
        color: var(--c-text); background: var(--c-bg);
-       -webkit-font-smoothing: antialiased; }
+       -webkit-font-smoothing: antialiased;
+       scroll-padding-top: calc(var(--header-h) + 8px); }
 h2 { font-size: 15px; font-weight: 600; }
 h3 { font-size: 13px; font-weight: 600; letter-spacing: .3px; }
 small { font-size: 12px; color: var(--c-text-muted); }
@@ -418,20 +420,35 @@ padding 14px 20px; border-bottom 1px solid var(--c-border)
 
 ### 6.7 表格
 
+**滚动模型（必须）**：账号列表在 `#listPanel .table-wrap` **内部纵向滚动**；表头在该容器内 `top: 0` 吸顶。**禁止**整页滚动 + `thead { top: var(--header-h) }` + `border-collapse: collapse`——首条账号会被吸顶表头或 App Header 遮住（已知 CSS 缺陷，每个新项目都会复现）。
+
+- Toolbar 固定在表格滚动区**上方**（不随表体滚动）
+- `body` 设 `scroll-padding-top: calc(var(--header-h) + 8px)`，减轻回顶时顶栏遮挡
+
 ```css
-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+#listPanel .table-wrap {
+  overflow: auto;
+  max-height: var(--list-table-max-h);
+  -webkit-overflow-scrolling: touch;
+}
+#listPanel .toolbar {
+  position: relative;
+  z-index: 3;
+  background: var(--c-surface);
+}
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; }
 thead th {
   padding: 10px 14px;
   font-size: 11.5px; font-weight: 600;
   letter-spacing: .5px; text-transform: uppercase;
   color: var(--c-text-muted);
   background: var(--c-surface-2);
-  border-bottom: 1px solid var(--c-border);
   white-space: nowrap;
-  position: sticky; top: var(--header-h); z-index: 10;
+  position: sticky; top: 0; z-index: 2;
+  box-shadow: inset 0 -1px 0 var(--c-border);
 }
 tbody tr {
-  border-bottom: 1px solid var(--c-border);
   transition: background var(--dur-fast);
 }
 tbody tr:hover { background: var(--c-surface-2); }
@@ -439,8 +456,11 @@ tbody tr.is-failed { background: rgba(220,38,38,.03); }
 tbody tr.is-failed:hover { background: rgba(220,38,38,.06); }
 tbody td {
   padding: 12px 14px; font-size: 13.5px; vertical-align: middle;
+  box-shadow: inset 0 -1px 0 var(--c-border);
 }
 ```
+
+**禁止**：`border-collapse: collapse` 与 viewport 级 `thead { top: var(--header-h) }` 组合。
 
 **列宽分配**（`table-layout: fixed`）：
 
@@ -678,6 +698,7 @@ Tabs 根据 `docs/API_REQUIREMENTS.md` 生成：基础为 `基本信息 / 课程
 14. **日期筛选**：列表 toolbar 提供 `date_from` / `date_to`（`<input type="date">`），映射到 `GET /api/accounts?date_from=&date_to=`（Unix 秒，按创建时间 `created_at` 过滤）。
 15. **空态切换**：初次加载 → skeleton；数据到达 → `#tableWrap` 设为 `display:block` **且 `opacity:1`**（初始 inline 可为 `opacity:0` 做淡入）；无数据 → empty-state。
 16. **IIFE 与内联事件**：脚本包在 `(function(){…})()` 时，凡 HTML 属性里的 `onclick` / `onchange` / `oninput` 所调用的函数（含 `openDrawer`、`requeueAccount`、筛选/分页等）**必须** `Object.assign(window, { … })` 暴露；否则控制台报 `ReferenceError`，详情抽屉与操作列按钮均失效。`window.ui` / `window.closeModal` 已暴露，其余同理。
+17. **列表表格滚动**：必须按 §6.7 在 `#listPanel .table-wrap` 内滚动；验收时确认**首条账号完整可见**（滚动区 `scrollTop=0` 时首行不被表头遮住）。
 
 ---
 
@@ -800,7 +821,7 @@ Tabs 根据 `docs/API_REQUIREMENTS.md` 生成：基础为 `基本信息 / 课程
 - [ ] 假装 `/api/accounts` 返回 500：toast 报红，不卡死，下次轮询继续
 - [ ] 标签页切到后台 ≥ 30s，切回后立即触发刷新且 `#lastSync` 更新
 - [ ] 抽屉 ESC 关闭；modal ESC 关闭；点遮罩关闭
-- [ ] 表头 sticky，长列表滚动时不消失
+- [ ] 表头在 `#listPanel .table-wrap` 内 sticky（`top: 0`），长列表滚动时不消失；**首条账号完整可见**（禁止 viewport `top: var(--header-h)` + `border-collapse: collapse`）
 - [ ] 单 HTML 文件总行数 ≤ 1600
 - [ ] 全页可见文案为简体中文（header、表头、toast、confirm、空态）；Web 列表表头与 Excel 导入列名一致（中文）
 - [ ] 失败账号行有「复制日志」；点击后剪贴板与 `error_log_text` 完全一致
@@ -838,7 +859,7 @@ function recentFiveYears() {
 | 账号 + 密码 | `split`：两个 `input`；`combined`：一栏 `textarea`（§6.5） | 必填 |
 | 备注 | `input` | 可选 |
 | 目标年度 | `.year-pills` 多选 | 见 §14.1 |
-| 任务模式 | `radio` 或 segmented | `标准`（normal）/ `快速`（fast），默认标准 |
+| 任务模式 | `radio` 或 segmented | `标准`（normal）/ `快速`（fast），默认标准；快速=**步长不变、上报更频**；**当 `FAST_REPORT_SUPPORTED=False` 时隐藏「快速」或只读显示「标准」** |
 
 **不展示**：姓名（登录后回填展示）、学科1/2、学分、卡号。
 
@@ -850,7 +871,7 @@ function recentFiveYears() {
 - **姓名列**：`font-weight 600`；添加时无姓名，未跑过 worker 显示「（待获取）」；登录后显示 `display_name` 或 `extra.real_name`；**点击姓名**打开详情抽屉（同 A 型 §6.7）。
 - 展开/抽屉：**按年分组**展示 `year_status`（要求学时、已获得、总进度条、课程列表）；当前学习课程展开**课节/单元**列表及各自进度（高亮 `learning_progress.hour_id`）；**无**「学科·学分」pill 行。已获得学时为 0 时，总进度条展示课程学习进度并标注「（学习中）」。
 - 基本信息 tab：若有 `extra.learning_progress`，展示「正在学习」一行（课程 · 课节 · 进度%）。
-- 列表 `progressPercent()` + `yearDisplayPercent()`：优先各年展示进度（`annual_progress_percent` 或回退 `course_learning_percent` / 课程 `percent` / `learning_progress.percent`）；**勿**在 `progress_percent===0` 时直接返回 0。
+- 列表 `progressPercent()` + `yearDisplayPercent()`：优先各年展示进度；**不足 1% 时保留一位小数**（读 `percent_name` 或 `course.percent` 小数，禁止 `Math.round` 后直接变 0）；进度条宽度 `<1%` 时至少 1px；**`learning_progress` 课节名兼容 `hour_title` / `title`**。
 - 课程 Tab（若有）：按 **年度 → 课程列表** 嵌套，排序与 `queue_rank` 无关（B 型无 planner）。
 
 ### 14.4 API 形状（B 型）
@@ -868,11 +889,13 @@ function recentFiveYears() {
 - [ ] 未选年度提交被拦截（中文 toast）
 - [ ] 列表/抽屉无学科1/学分必填提示
 - [ ] 列表第一栏为**姓名**（未获取时「（待获取）」），第二栏为账号；点击姓名打开抽屉
+- [ ] 桌面列表首条账号在 `table-wrap` 顶部完整可见（§6.7 内部滚动，不被表头遮住）
 - [ ] `credential_input_mode=combined` 时 B 型添加面板显示「账号密码」一栏 `textarea`（`#fCredentialWrapB`），隐藏账号/密码分栏；`split` 时相反
 - [ ] 年度进度 tab：`renderYearProgressB()` 展示课程块 + 课节进度条；正在学课节高亮（`.unit-row.active`）
 - [ ] 基本信息 tab 展示「正在学习」（当 `learning_progress` 存在）
 - [ ] 列表进度条随 Worker 写入的 `progress_percent` 更新；**已获得学时为 0 时**仍显示课程学习进度（非 0%）
 - [ ] Excel 导入列与 §14.2 一致（见 `excel-spec.md` §2B）
+- [ ] `FAST_REPORT_SUPPORTED=False` 时添加/编辑面板无「快速」选项；API/Excel 传入 `fast` 降级为 `normal`
 
 ---
 
@@ -886,7 +909,7 @@ function recentFiveYears() {
 |------|------|------|
 | 账号 + 密码 | `split`：两个 `input`；`combined`：一栏 `textarea`（§6.5） | 必填 |
 | 备注 | `input` | 可选 |
-| 任务模式 | `radio` 或 segmented | `标准`（normal）/ `快速`（fast），默认标准 |
+| 任务模式 | `radio` 或 segmented | `标准`（normal）/ `快速`（fast），默认标准；快速=**步长不变、上报更频**；**当 `FAST_REPORT_SUPPORTED=False` 时隐藏「快速」** |
 
 **不展示**：目标年度 pill、学科1/2、学分、卡号。
 
@@ -958,5 +981,6 @@ function applyListLayout() {
 - [ ] 「同步项目」可用且 toast 中文反馈
 - [ ] 分页与 `filtered_total` 正确
 - [ ] 桌面/移动互斥渲染；抽屉不被遮罩盖住
+- [ ] 桌面列表首条账号完整可见（§6.7 `table-wrap` 内部滚动 + `thead top:0`）
 - [ ] `credential_input_mode=combined` 时 B′ 添加面板显示「账号密码」一栏 `textarea`（`#fCredentialWrapBp`），隐藏账号/密码分栏；`split` 时相反
 - [ ] Excel 导入列与 §15.1 一致（见 `excel-spec.md` §2B′）

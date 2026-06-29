@@ -44,6 +44,7 @@ When `site_profile: B`:
 - `extra_json` must track `year_status`, `learning_progress`, `progress_percent`, `current_year`, `report_mode`, `phase` (see `templates/requirements-year-driven.md` and **`progress-sync.md`**).
 - **Progress sync (B)**：Worker 在课节开始/学习中写 `learning_progress`；**课节开始 + 每个课节完成**调用 `<pkg>/progress_snapshot.build_year_progress` 刷新 `year_status` + `progress_percent`（展示进度在已获得学时为 0 时回退课程学习进度，见 `progress-sync.md` §两套进度指标）。复制 `worker_b_template.py` → `<svc>/worker.py`。
 - Web UI + Excel per `web-ui-spec.md` §14 and `excel-spec.md` §2B.
+- **`FAST_REPORT_SUPPORTED`**（来自 Phase 2 / `<pkg>/study.py`）：`False` 时 Web 隐藏快速模式、Excel/API 的 `fast` 降级为 `normal`（见 `phase2-api-tools.md` § Video Progress）。
 - Schema: **omit** `apply_queue`, `credit_applications`, `ai_subject_cache` unless documented gap.
 - Account status machine: **no** `waiting_apply`.
 - **No daily learn/apply quota**（公需无单日限制）：Worker **不**调用「今日已学 N 门 → `daily_eligible_at(明日)`」；`config.py` **不设** `MAX_LEARN_PER_DAY` / `MAX_APPLY_PER_DAY`；课程单元 **无** `daily_learn_date`。`scheduling.py` 的 8:00 spread **可省略**（仅 A 型或用户明确要求日切错峰时再实现）。
@@ -57,6 +58,7 @@ When `site_profile: B_prime`:
 - `AccountWorker.run_once`: session → **`ProjectTaskRunner.run_account()`** — no `course_planner`, no `YearTaskRunner`.
 - `extra_json` must track `project_status` (per `build_project_status()`), `current_project_id`, `current_course_title`, `report_mode`, `phase`.
 - Web UI per `web-ui-spec.md` §15; Excel per `excel-spec.md` §2B′.
+- **`FAST_REPORT_SUPPORTED`**：同 B 型；站点有限制则不做快速模式。
 - Expose **`POST /api/accounts/{id}/sync-projects`** in `web/app.py` (login + `build_project_status` + merge into `extra_json`).
 - `GET /api/accounts` returns **`filtered_total`** for pagination (`store.count_accounts` with same filters).
 - Schema: omit `apply_queue`, `ai_subject_cache`, `scheduling.py` (same as B).
@@ -363,9 +365,10 @@ The console has a **pre-built template**: copy `templates/code/web/index.html` t
 4. Delete `[OPTIONAL:xxx]` blocks for features not in `docs/API_REQUIREMENTS.md` scope.
 5. Verify all items in `web-ui-spec.md §12–§13`. Fix any that fail.
 
-**常见模板陷阱**（A/B/B′ 共用，见 `web-ui-spec.md` §8.15–§8.16、§15.5–§15.6）：
+**常见模板陷阱**（A/B/B′ 共用，见 `web-ui-spec.md` §6.7、§8.15–§8.16、§15.5–§15.6）：
 
 - `#tableWrap` 初始 `opacity:0` 时，`applyListLayout()` 显示表格必须设 `opacity:1`，否则统计/分页正常但桌面表格不可见。
+- **列表首行被遮**：勿用 `thead { top: var(--header-h) }` + `border-collapse: collapse`；须按 `web-ui-spec.md` §6.7 让 `#listPanel .table-wrap` 内部滚动、`thead { top: 0 }`、`border-collapse: separate`。
 - 脚本在 IIFE 内时，须 `Object.assign(window, { openDrawer, closeDrawer, requeueAccount, … })`，否则姓名点击与操作列 `onclick` 报 `ReferenceError`。
 - B 型列表须 **7 列**（姓名、账号、备注、目标年度、状态、进度、操作），表头与 `rowHtml()` 列数一致；姓名列点击打开抽屉。
 
