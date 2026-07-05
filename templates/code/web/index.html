@@ -1302,13 +1302,18 @@ function dragLeave(){document.getElementById('uploadZone').classList.remove('dra
 function dropFile(e){e.preventDefault();dragLeave();const f=e.dataTransfer.files[0];if(f)uploadFile(f);}
 async function uploadFile(file){
   if(!file) return;
+  if(!/\.xlsx$/i.test(file.name)){
+    window.ui.toast('仅支持 .xlsx 文件','warning');
+    return;
+  }
   const fd=new FormData(); fd.append('file',file);
   try{
     const r=await fetch('/api/accounts/upload',{method:'POST',body:fd});
     const d=await r.json().catch(()=>({detail:r.statusText}));
     if(!r.ok) throw new Error(d.detail||'上传失败');
-    const msg=`导入：新增 ${d.added}，跳过 ${d.skipped}，失败 ${d.failed}`;
-    window.ui.toast(msg,d.failed>0?'warning':'success');
+    let msg=`导入：新增 ${d.added}，跳过 ${d.skipped}，失败 ${d.failed}`;
+    if(d.errors&&d.errors.length) msg+=' — '+d.errors.slice(0,3).join('；');
+    window.ui.toast(msg,d.failed>0?'warning':d.added>0?'success':'info');
     await refresh();
   }catch(e){window.ui.toast(e.message,'danger');}
   document.getElementById('fileInput').value='';
@@ -1665,10 +1670,11 @@ function showShortcutHelp(){
 function fmtTs(ts){if(!ts)return '—';const d=new Date(ts*1000);return d.toLocaleDateString('zh-CN')+' '+d.toTimeString().slice(0,8);}
 
 // ── Init ──────────────────────────────────────────────────────────────────────
-// 内联 onclick/onchange 须挂到 window（IIFE 内局部函数对 HTML 属性不可见）
+// 内联 onclick/onchange/onsubmit/ondrag* 须挂到 window（IIFE 内局部函数对 HTML 属性不可见）
 Object.assign(window,{
   filterByStatus,togglePanel,debounceSearch,setFilter,refresh,
   changePageSize,goPageDelta,selectMode,uploadFile,
+  dragOver,dragLeave,dropFile,submitAddForm,
   requeueAccount,editRequeue,deleteAccount,
   openDrawer,closeDrawer,switchTab,submitRecharge,
 });

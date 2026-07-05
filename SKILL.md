@@ -191,7 +191,8 @@ Bundling **gap acceptance** or **scope cut** into the normal phase-gate confirma
 - Do NOT reorder export columns relative to import template
 - Do NOT use emoji in UI text; use plain Chinese labels
 - Do NOT skip `ui.confirm` / `ui.toast` patterns in web UI
-- Do NOT ship `index.html` with `#tableWrap` left at `opacity:0` after data load, with IIFE handlers not on `window`, or with viewport `thead { top: var(--header-h) }` + `border-collapse: collapse` — the first three break list visibility / drawer clicks; the last hides the first account row (see `web-ui-spec.md` §6.7、§8.15–§8.16)
+- Do NOT ship `index.html` with `#tableWrap` left at `opacity:0` after data load, with IIFE handlers not on `window`, or with viewport `thead { top: var(--header-h) }` + `border-collapse: collapse` — the first three break list visibility / drawer clicks; the last hides the first account row (see `web-ui-spec.md` §6.7、§8.15–§8.16). **`Object.assign(window, …)` 须含 `submitAddForm`、`dragOver`/`dragLeave`/`dropFile`，否则添加表单与拖拽 Excel 上传报 `ReferenceError`**
+- Do NOT generate **`combined` Excel 模板** with sample values in both「账号密码」and「账号」「密码」split columns, or import with split-first credential resolution — users who only edit the combined column will import stale split placeholders (see `excel-spec.md` §2 combined rules)
 - Do NOT mark a phase complete with unchecked DoD or unaccepted gaps in `docs/gaps/`
 - Do NOT mark phase 6 complete when only dev-mode `./start.sh` works — **`smoke_frozen.py` must pass** on the PyInstaller binary (see `phase6-packaging.md` §Packaged Artifact Smoke Test)
 - Do NOT duplicate full spec checklists in `docs/verification/` — only pass/fail + evidence

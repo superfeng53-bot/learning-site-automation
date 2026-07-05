@@ -369,7 +369,8 @@ The console has a **pre-built template**: copy `templates/code/web/index.html` t
 
 - `#tableWrap` 初始 `opacity:0` 时，`applyListLayout()` 显示表格必须设 `opacity:1`，否则统计/分页正常但桌面表格不可见。
 - **列表首行被遮**：勿用 `thead { top: var(--header-h) }` + `border-collapse: collapse`；须按 `web-ui-spec.md` §6.7 让 `#listPanel .table-wrap` 内部滚动、`thead { top: 0 }`、`border-collapse: separate`。
-- 脚本在 IIFE 内时，须 `Object.assign(window, { openDrawer, closeDrawer, requeueAccount, … })`，否则姓名点击与操作列 `onclick` 报 `ReferenceError`。
+- 脚本在 IIFE 内时，须 `Object.assign(window, { openDrawer, closeDrawer, requeueAccount, submitAddForm, dragOver, dropFile, uploadFile, … })`，否则姓名点击、添加表单、拖拽 Excel 上传与操作列 `onclick` 报 `ReferenceError`。
+- `combined` 模式 Excel 模板示例行：「账号」「密码」分列留空，仅填「账号密码」；`resolve_credentials_from_row` 须 combined 列优先（见 `excel-spec.md` §2）。
 - B 型列表须 **7 列**（姓名、账号、备注、目标年度、状态、进度、操作），表头与 `rowHtml()` 列数一致；姓名列点击打开抽屉。
 
 Read **`web-ui-spec.md`** as authoritative spec — the template is an implementation of it. If template and spec diverge, fix the template copy.

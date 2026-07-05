@@ -124,15 +124,24 @@ def resolve_credentials_from_row(
     password: str,
     combined: str = "",
 ) -> tuple[str, str]:
-    """从分列或一栏列解析账号密码；分列均有值时优先分列。"""
+    """从分列或一栏列解析账号密码。
+
+    「账号密码」列非空时优先解析（combined 模板示例不在分列留占位符，避免只改一栏仍读到旧分列值）。
+    """
     user = (username or "").strip()
     pwd = (password or "").strip()
     comb = (combined or "").strip()
+    if comb:
+        try:
+            parsed = parse_combined_credentials(comb)
+            if parsed.username:
+                return parsed.username, parsed.password
+        except CredentialParseError:
+            if user and pwd:
+                return user, pwd
+            raise
     if user and pwd:
         return user, pwd
-    if comb:
-        parsed = parse_combined_credentials(comb)
-        return parsed.username, parsed.password
     if user or pwd:
         raise CredentialParseError("账号和密码须同时填写，或改填「账号密码」一栏")
     raise CredentialParseError("账号和密码不能均为空")
@@ -207,13 +216,16 @@ def build_template_xlsx(
             ("表头", "不可改字、不可调列顺序"),
             ("必填列", "账号+密码（分列填写），或仅填「账号密码」一栏（自动识别）"),
             *(
-                [("账号密码", "可粘贴「账号 xxx 密码 yyy」或 user pass；与分列二选一")]
+                [
+                    ("账号密码", "可粘贴「账号 xxx 密码 yyy」或 user pass；与分列二选一"),
+                    ("分列留空", "只填「账号密码」时，「账号」「密码」分列须留空，勿保留模板示例值"),
+                ]
                 if combined else []
             ),
             ("任务模式", "标准 或 快速（可选，默认标准）"),
             (
                 "示例",
-                "账号 zhangsan 密码 （示例） / zhangsan@example.com / / 备注 / 标准"
+                "账号 zhangsan 密码 （示例） / （分列留空）/ / 备注 / 标准"
                 if combined
                 else "zhangsan@example.com / （密码）/ 备注 / 标准",
             ),
@@ -225,14 +237,17 @@ def build_template_xlsx(
             ("表头", "不可改字、不可调列顺序"),
             ("必填列", "账号+密码（分列填写），或仅填「账号密码」一栏（自动识别）"),
             *(
-                [("账号密码", "可粘贴「账号 xxx 密码 yyy」或 user pass；与分列二选一")]
+                [
+                    ("账号密码", "可粘贴「账号 xxx 密码 yyy」或 user pass；与分列二选一"),
+                    ("分列留空", "只填「账号密码」时，「账号」「密码」分列须留空，勿保留模板示例值"),
+                ]
                 if combined else []
             ),
             ("目标年度", "可多选，用顿号或逗号分隔；不填则默认当前自然年"),
             ("任务模式", "标准 或 快速（可选，默认标准）"),
             (
                 "示例",
-                "账号 zhangsan 密码 （示例） / zhangsan@example.com / / 备注 / 2026,2025 / 标准"
+                "账号 zhangsan 密码 （示例） / （分列留空）/ / 备注 / 2026,2025 / 标准"
                 if combined
                 else "zhangsan@example.com / （密码）/ 备注 / 2026,2025 / 标准",
             ),
@@ -244,7 +259,10 @@ def build_template_xlsx(
             ("表头", "不可改字、不可调列顺序"),
             ("必填列", "账号+密码（分列填写），或仅填「账号密码」一栏（自动识别）"),
             *(
-                [("账号密码", "可粘贴「账号 xxx 密码 yyy」或 user pass；与分列二选一")]
+                [
+                    ("账号密码", "可粘贴「账号 xxx 密码 yyy」或 user pass；与分列二选一"),
+                    ("分列留空", "只填「账号密码」时，「账号」「密码」分列须留空，勿保留模板示例值"),
+                ]
                 if combined else []
             ),
             ("学科", "学科与学分成对填写；学分支持 0.5；未启用学科需求可留空"),
@@ -264,11 +282,12 @@ def build_template_xlsx(
 
 
 def _get_sample_row(cols: list[str]) -> list[str]:
+    combined_mode = COMBINED_CRED_COL in cols
     mapping = {
         "姓名": "张三",
         COMBINED_CRED_COL: "账号 zhangsan@example.com 密码 （示例密码）",
-        "账号": "zhangsan@example.com",
-        "密码": "（示例密码）",
+        "账号": "" if combined_mode else "zhangsan@example.com",
+        "密码": "" if combined_mode else "（示例密码）",
         "学科1": "内科学",
         "学分1": "5",
         "学科2": "公共课",
@@ -384,6 +403,11 @@ def parse_import_xlsx(
                     [y.strip() for y in years_raw.replace("，", ",").replace("、", ",").split(",") if y.strip()]
                     if years_raw else [_current_year_str()]
                 )
+            extra: dict[str, Any] = {}
+            if remark:
+                extra["remark"] = remark
+            if report_mode != "normal":
+                extra["report_mode"] = report_mode
             rows.append(ImportRow(
                 display_name="",
                 username=username,
@@ -391,7 +415,7 @@ def parse_import_xlsx(
                 requirements=[],
                 target_years=target_years,
                 report_mode=report_mode,
-                extra={"remark": remark},
+                extra=extra,
                 remark=remark,
             ))
         else:

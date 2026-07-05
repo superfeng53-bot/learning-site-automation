@@ -697,7 +697,7 @@ Tabs 根据 `docs/API_REQUIREMENTS.md` 生成：基础为 `基本信息 / 课程
 13. **数字输入**：并发 `min=1 max=400 step=1`；学分 `min=0 step=0.5`。
 14. **日期筛选**：列表 toolbar 提供 `date_from` / `date_to`（`<input type="date">`），映射到 `GET /api/accounts?date_from=&date_to=`（Unix 秒，按创建时间 `created_at` 过滤）。
 15. **空态切换**：初次加载 → skeleton；数据到达 → `#tableWrap` 设为 `display:block` **且 `opacity:1`**（初始 inline 可为 `opacity:0` 做淡入）；无数据 → empty-state。
-16. **IIFE 与内联事件**：脚本包在 `(function(){…})()` 时，凡 HTML 属性里的 `onclick` / `onchange` / `oninput` 所调用的函数（含 `openDrawer`、`requeueAccount`、筛选/分页等）**必须** `Object.assign(window, { … })` 暴露；否则控制台报 `ReferenceError`，详情抽屉与操作列按钮均失效。`window.ui` / `window.closeModal` 已暴露，其余同理。
+16. **IIFE 与内联事件**：脚本包在 `(function(){…})()` 时，凡 HTML 属性里的 `onclick` / `onchange` / `oninput` / `onsubmit` / `ondragover` / `ondragleave` / `ondrop` 所调用的函数（含 `openDrawer`、`requeueAccount`、`submitAddForm`、`uploadFile`、`dragOver`、`dropFile`、筛选/分页等）**必须** `Object.assign(window, { … })` 暴露；否则控制台报 `ReferenceError`，添加表单、拖拽上传、详情抽屉与操作列按钮均失效。`window.ui` / `window.closeModal` 已暴露，其余同理。
 17. **列表表格滚动**：必须按 §6.7 在 `#listPanel .table-wrap` 内滚动；验收时确认**首条账号完整可见**（滚动区 `scrollTop=0` 时首行不被表头遮住）。
 
 ---
@@ -972,7 +972,7 @@ function applyListLayout() {
 
 复制日志按钮用 `addEventListener('click', () => copyErrLog(logText))`，**禁止** `onclick="copyErrLog(${JSON.stringify(...)})"`（长日志会被截断）。
 
-脚本若在 IIFE 内，复制模板末尾须保留 `Object.assign(window, { openDrawer, closeDrawer, switchTab, requeueAccount, … })`，见 §8 第 16 条。
+脚本若在 IIFE 内，复制模板末尾须保留 `Object.assign(window, { openDrawer, closeDrawer, switchTab, requeueAccount, submitAddForm, dragOver, dropFile, uploadFile, … })`，见 §8 第 16 条。
 
 ### 15.7 B′ 验收追加项
 
