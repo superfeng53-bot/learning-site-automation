@@ -49,6 +49,7 @@ ddddocr>=1.4.11
 pycryptodome>=3.20
 pillow>=10.0
 openpyxl>=3.1
+tzdata>=2024.1  # Windows has no system tz db; zoneinfo("Asia/Shanghai") fails without it (Excel import / year defaults)
 """
 
 PKG_INIT = '''\

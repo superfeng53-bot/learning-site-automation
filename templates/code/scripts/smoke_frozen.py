@@ -51,6 +51,113 @@ def _http_get(url: str, timeout: float = 5.0) -> tuple[int, str]:
         return resp.status, resp.read().decode("utf-8", errors="replace")
 
 
+def _http_post(url: str, timeout: float = 10.0) -> tuple[int, str]:
+    req = urllib.request.Request(
+        url, data=b"", method="POST", headers={"User-Agent": "smoke_frozen/1.0"}
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return resp.status, resp.read().decode("utf-8", errors="replace")
+
+
+def _http_post_multipart(
+    url: str, field: str, filename: str, payload: bytes, timeout: float = 10.0
+) -> tuple[int, str]:
+    boundary = "----smokefrozen7d9a2b"
+    body = b"".join([
+        f"--{boundary}\r\n".encode(),
+        (
+            f'Content-Disposition: form-data; name="{field}"; filename="{filename}"\r\n'
+            "Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\r\n\r\n"
+        ).encode(),
+        payload,
+        f"\r\n--{boundary}--\r\n".encode(),
+    ])
+    req = urllib.request.Request(
+        url,
+        data=body,
+        method="POST",
+        headers={
+            "User-Agent": "smoke_frozen/1.0",
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return resp.status, resp.read().decode("utf-8", errors="replace")
+
+
+def _build_probe_xlsx() -> bytes:
+    """Minimal B-profile import workbook with one fake account (中文表头)."""
+    import io
+
+    import openpyxl
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "账号列表"
+    ws.append(["账号", "密码", "备注", "目标年度", "任务模式"])
+    ws.append(["smoke-probe", "probe-pwd", "smoke_frozen 自检", "", "标准"])
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def _probe_excel_import(base: str) -> list[str]:
+    """上传一行假账号，覆盖 zoneinfo(Asia/Shanghai) 路径（Windows 缺 tzdata 时全挂）。"""
+    errors: list[str] = []
+    try:
+        payload = _build_probe_xlsx()
+    except ImportError:
+        print("[smoke] 跳过 Excel 导入探测（运行环境缺 openpyxl）")
+        return errors
+
+    # 先暂停调度器，防止假账号被拿去真实登录
+    try:
+        _http_post(f"{base}/api/scheduler/pause")
+        print("[smoke] POST /api/scheduler/pause → OK")
+    except urllib.error.HTTPError as exc:
+        print(f"[smoke] Excel 导入探测跳过（/api/scheduler/pause → HTTP {exc.code}）")
+        return errors
+
+    try:
+        status, body = _http_post_multipart(
+            f"{base}/api/accounts/upload", "file", "smoke_probe.xlsx", payload
+        )
+    except urllib.error.HTTPError as exc:
+        detail = ""
+        try:
+            detail = exc.read().decode("utf-8", errors="replace")
+        except Exception:
+            pass
+        if "no time zone" in detail.lower() or "zoneinfo" in detail.lower():
+            errors.append(
+                "POST /api/accounts/upload → zoneinfo 缺 tzdata（Excel 导入在 frozen 下不可用）"
+            )
+        else:
+            errors.append(f"POST /api/accounts/upload → HTTP {exc.code}: {detail[:200]}")
+        return errors
+    low = body.lower()
+    if status != 200:
+        errors.append(f"POST /api/accounts/upload → HTTP {status}")
+    elif "no time zone" in low or "zoneinfo" in low:
+        # 典型症状：ZoneInfoNotFoundError: No time zone found with key Asia/Shanghai
+        # 根因：Windows 无系统时区库，打包缺 tzdata → requirements 加 tzdata + spec
+        # hiddenimports 加 'tzdata', 'tzdata.zoneinfo' 后重新 build
+        errors.append(
+            "POST /api/accounts/upload → zoneinfo 缺 tzdata（Excel 导入在 frozen 下不可用）"
+        )
+    else:
+        try:
+            added = int(json.loads(body).get("added", -1))
+            skipped = int(json.loads(body).get("skipped", -1))
+        except (json.JSONDecodeError, TypeError, ValueError):
+            added = skipped = -1
+        if added + skipped >= 1:
+            print(f"[smoke] POST /api/accounts/upload → OK (added={added}, skipped={skipped})")
+        else:
+            errors.append(f"POST /api/accounts/upload → 响应异常: {body[:200]}")
+    return errors
+
+
 def _wait_endpoint(endpoint_path: Path, timeout_sec: float) -> dict:
     deadline = time.time() + timeout_sec
     while time.time() < deadline:
@@ -133,6 +240,9 @@ def main() -> int:
                 errors.append(f"缺少目录/文件: {rel}（应在 exe 同目录创建）")
             else:
                 print(f"[smoke] 存在: {rel}")
+
+        # Excel 导入探测：覆盖 zoneinfo(Asia/Shanghai) 路径（tzdata 缺失的盲区）
+        errors.extend(_probe_excel_import(base))
 
         if proc.poll() is not None:
             out = proc.stdout.read() if proc.stdout else ""

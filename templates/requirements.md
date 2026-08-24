@@ -51,6 +51,7 @@
 Python 3.9+ / FastAPI / Uvicorn / Pydantic / SQLite WAL
 <pkg>（登录/<DOMAIN_LIST>）
 zoneinfo / openpyxl / ddddocr / pycryptodome
+tzdata（Windows 必装：无系统时区库，zoneinfo("Asia/Shanghai") 缺它即挂）
 （可选）<LLM_VENDOR>，用于 <CLASSIFICATION_TASK>
 ```
 

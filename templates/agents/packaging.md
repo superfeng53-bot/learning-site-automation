@@ -35,7 +35,7 @@ These are **product rules**, not Cursor-isms. Every host must follow them:
 2. **Blocking gate:** `scripts/smoke_frozen.py` **exit 0** on the **PyInstaller onefile** (or the manual table in SPEC.md, recorded in `docs/verification/PHASE6_REPORT.md`).
 3. **`./build.sh` / `build.bat` must call smoke** after PyInstaller (`scripts/build.py` `check_call`). Missing `smoke_frozen.py` → fail the build.
 4. **onefile only** as the deliverable; `console=True` (never windowed / `console=False`). Binary name `{平台中文名}_{MM}_{DD}` using **build-day** month/day.
-5. **`datas`**: FastAPI HTML template + `collect_data_files('ddddocr')` (ONNX). **`hiddenimports`**: uvicorn loop/protocol/lifespan modules in SPEC.md.
+5. **`datas`**: FastAPI HTML template + `collect_data_files('ddddocr')` (ONNX). **`hiddenimports`**: uvicorn loop/protocol/lifespan modules **and** `'tzdata', 'tzdata.zoneinfo'` (Windows has no system tz db — without tzdata, `ZoneInfo("Asia/Shanghai")` raises and Excel import fails) in SPEC.md. `requirements.txt` must include `tzdata>=2024.1`.
 6. **`runtime.project_root()`** when `sys.frozen`: `Path(sys.executable).parent` — never write SQLite / `.run/` into `_MEIPASS`.
 7. Frozen `run_service.py`: top-level `except` + `traceback.print_exc()` + `input("启动失败，按 Enter 退出…")` so the console does not flash-close.
 8. Second launch of the **same binary** only opens the existing Web UI (single-instance lock). Same behavior as Phase 5 `run_service.py`.

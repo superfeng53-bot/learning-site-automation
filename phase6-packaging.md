@@ -149,6 +149,9 @@ a = Analysis(
         'uvicorn.protocols', 'uvicorn.protocols.http.auto',
         'uvicorn.protocols.websockets.auto',
         'uvicorn.lifespan.on',
+        # zoneinfo tz database — Windows has no system tz db; without tzdata,
+        # ZoneInfo("Asia/Shanghai") raises and Excel import / year defaults fail
+        'tzdata', 'tzdata.zoneinfo',
     ],
     hookspath=[], runtime_hooks=[], excludes=[],
     win_no_prefer_redirects=False, win_private_assemblies=False,
@@ -186,8 +189,9 @@ Critical bits:
 2. **复制到** `tempfile.mkdtemp()` 隔离目录（不污染仓库 `data/`）
 3. 以 `--no-browser` 启动，轮询 `.run/service/endpoint.json`（默认 90s）
 4. HTTP 探测：`/api/health`、`/api/config`、`/` 均 200
-5. 断言 exe 同目录存在 `.run/service/service.lock`、`data/`
-6. 进程仍存活；失败时打印 stdout 尾部并 exit 1
+5. **Excel 导入探测**：先 `POST /api/scheduler/pause`，再上传一行假账号的最小 xlsx 到 `/api/accounts/upload`——覆盖 `zoneinfo("Asia/Shanghai")` 路径（Windows 缺 `tzdata` 时导入全挂但 health 正常，是该脚本的已知盲区，此步专防）
+6. 断言 exe 同目录存在 `.run/service/service.lock`、`data/`
+7. 进程仍存活；失败时打印 stdout 尾部并 exit 1
 
 ```bash
 # build 后自动跑（build.py 内 check_call）
@@ -246,6 +250,7 @@ ddddocr>=1.4.11
 pycryptodome>=3.20
 pillow>=10.0
 openpyxl>=3.1
+tzdata>=2024.1    # required on Windows: zoneinfo("Asia/Shanghai") fails without it
 zhipuai>=2.0    # only if AI mapping is used
 ```
 
@@ -384,6 +389,7 @@ data/
 - **PyInstaller misses FastAPI template**: `GET /` 500 或空白。Fix：`datas` 含 `('<svc>/web/templates', '<svc>/web/templates')`，且 `app.py` 里 `templates` 路径基于 `project_root()` 或可 import 的包路径。
 - **Binary writes to wrong directory**: `runtime.project_root()` must check `sys.frozen` and use `Path(sys.executable).parent` when frozen — otherwise SQLite gets created in PyInstaller's `_MEIPASS` and is wiped on next launch. smoke 可能仍短暂 pass（内存态），重启丢数据。
 - **uvicorn / stdlib hiddenimports**: 症状 `ModuleNotFoundError: uvicorn.loops.auto`。Fix：补 spec `hiddenimports`（见上文模板）。
+- **zoneinfo 时区库缺失（Windows 必踩）**: 症状 `ZoneInfoNotFoundError: No time zone found with key Asia/Shanghai`，Excel 导入/目标年度默认值全挂，但 `/api/health` 正常、smoke 可能照常 PASS（盲区）。Windows 没有系统时区库，`zoneinfo` 依赖 pip 包 `tzdata`。Fix：`requirements.txt` 加 `tzdata>=2024.1` + spec `hiddenimports` 加 `'tzdata', 'tzdata.zoneinfo'`。注意开发态 venv 也可能缺（该路径未触发时静默），构建 venv 与开发 venv 都要装。
 - **Console window closes immediately on error**: keep `console=True`, add frozen 顶层 `except` + `input()`（见 §Packaged Artifact Smoke Test）。
 - **macOS Gatekeeper**: unsigned binaries trigger a "cannot be opened" dialog. Document `xattr -d com.apple.quarantine <binary>` as the workaround.
 - **CI on Windows or macOS**: avoid unless really needed. The smoke test is import-only, ubuntu is enough — **本地打包 smoke 仍是硬性门禁**。
