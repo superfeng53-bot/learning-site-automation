@@ -1,6 +1,6 @@
 # Phase 1 — Login Reconnaissance
 
-Goal: produce `docs/LOGIN_FLOW.md` and a working `<pkg>/login.py` that logs in with **pure HTTP requests** (no browser at runtime). Browser MCP is used here for reconnaissance only.
+Goal: produce `docs/LOGIN_FLOW.md` and a working `<pkg>/login.py` that logs in with **pure HTTP requests** (no browser at runtime). Recon uses the §1.1 net ladder (MCP if it works, else curl/JS).
 
 ## Definition of Done
 
@@ -39,13 +39,13 @@ python ~/.cursor/skills/learning-site-automation/scripts/init_project.py \
 
 If `<pkg_name>` is unclear, derive from the site: e.g. `www.sww.com.cn` → `sww_api`, `www.example.com` → `ex_api`.
 
-## Step 2 — Browser reconnaissance (mcp `cursor-ide-browser`)
+## Step 2 — Reconnaissance (built-in net; MCP optional)
 
-在 **Cursor** 中执行时，**必须**使用 MCP **`cursor-ide-browser`**（Cursor 内置浏览器工具），不要用 Playwright/Selenium/WebFetch 做现场解析。浏览器仅用于侦察，不进 runtime。硬规则见 `cursor-agent-playbook.md` **§1.1**。
+按 `cursor-agent-playbook.md` **§4（梯子，原 §1.1）**：MCP 能打开页面就用浏览器点表单、开 Network；**否则立刻**用 `curl` / `python requests` / `WebFetch` 拉登录页与 SSO HTML/JS，还原 POST 字段并打真实接口。不要因 `Server not found: cursor-ide-browser` 停工。禁止 Playwright/Selenium。浏览器/HTTP 仅用于侦察，不进 runtime。
 
-**Cursor 编排（推荐）**：本步可派 **`Task` + `explore`** 或项目 **`.cursor/agents/api-recon`** 专职 browser 侦察；子 agent prompt 须写明「只用 `cursor-ide-browser`」。父 agent 只审阅产出。详见 playbook §3。子 agent **只写** `docs/LOGIN_FLOW.draft.md`，不写 `login.py`。调用 MCP 前先 **Read** `mcps/cursor-ide-browser/tools/*.json`。侦察结束写 mid-phase handoff 或等 phase 1 结束再写 `docs/handoffs/PHASE1_*.md`。
+**Goal 编排**：本文件由 **Phase 1 工人**执行（见 `templates/agents/phase-worker.md`）。工人可嵌套 `api-recon`：只写 `docs/LOGIN_FLOW.draft.md`，再由同一 Phase 1 工人写 `login.py`。禁止建议 New Chat。若走 MCP，调用前 Read 工具 schema。阶段结束写 `docs/handoffs/PHASE1_*.md` 给 Phase 2 工人。
 
-Workflow:
+**MCP 可用时：**
 
 1. `browser_navigate` to the login URL (omit `position` so user keeps focus)
 2. `browser_lock` to claim the tab
@@ -58,6 +58,13 @@ Workflow:
 6. Read `localStorage` and any client UID via `Runtime.evaluate` (`localStorage`, `document.cookie`)
 7. Capture the post-login cookie set with `Network.getCookies` or `document.cookie`
 8. `browser_lock` action=`unlock`
+
+**MCP 不通时（同等有效）：**
+
+1. `curl -L` 首页，记下跳转与 script src（含 SSO 域）
+2. 下载 `app.js` / `login.js` / `rsaUtil.js` / captcha SDK，提取 path、字段、加密
+3. 用 `requests` 对真实登录 URL POST（可先错密码拿失败码，再用测试账号验证成功）
+4. 把 endpoint、码表、cookie/header 写入 draft；**不要**把证件号等敏感字段写入 `docs/`
 
 **Stop conditions** (escalate to user, do not improvise):
 - Login requires SMS, face scan, passkey, biometric, or any human-in-the-loop step.

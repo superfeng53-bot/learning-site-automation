@@ -127,13 +127,13 @@ If a mandatory-if-present capability is genuinely absent from the site (for exam
 
 ## Discovery Loop (repeat for each domain)
 
-**Cursor 编排**：每个 confirmed domain 单独一轮——先用 **`cursor-ide-browser` MCP**（内置浏览器，playbook §1.1）+ `Task explore` 或 `api-recon` subagent → `docs/api-discovery/<domain>.md`，再 `Task generalPurpose` 实现 `*Service`。每完成 **2 个 domain** 写 `docs/handoffs/PHASE2_<domains>_done.md` 并建议用户 **New Chat**。详见 playbook §3、§5。
+**Goal 编排**：本文件由 **一个 Phase 2 工人**执行。工人内部可按 domain 嵌套侦察（playbook §4 梯子 + `api-recon`，每轮最多 1–2 个 confirmed domain）再实现 `*Service`。Mid-handoff 写给**同一工人**接着用。禁止建议 New Chat。详见 playbook §6。
 
-1. **Browse with the test account** using **`cursor-ide-browser` MCP** (not external automation), perform the action manually
-2. Capture the network calls via `browser_cdp Network.enable` and `Network.requestWillBeSent` / `responseReceived`. Use `Network.getResponseBody` for response shapes you cannot read from the snapshot
+1. **Walk the flow with the test account** using §1.1 (MCP click-through if it works; otherwise authenticated HTTP). Do not use Playwright.
+2. Capture calls: MCP `Network.enable` **or** JS bundle paths + live `requests` with `data/cookies.json`
 3. Note: request body (form vs JSON), required headers, response codes
-4. After browser recon is written to `docs/api-discovery/<domain>.md`, optionally use **`shell` skill** / a tiny `curl` script with `data/cookies.json` to confirm parity (do not use this step to *discover* endpoints)
-5. Confirm parity with browser behaviour
+4. Write `docs/api-discovery/<domain>.md`. HTTP 对照可以与发现同一轮，不要编造未打过的 path
+5. Confirm parity with a second authenticated call
 6. Promote the script into a service method
 
 Do this for each confirmed domain in roughly this order. Mandatory domains come first; optional domains are included only when selected by the user or required by a selected flow.

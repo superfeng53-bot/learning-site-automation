@@ -2,6 +2,8 @@
 
 Goal: make the toolkit resilient to (a) session expiry, (b) transient network errors, (c) captcha rate-limiting, and (d) site-side anti-abuse soft errors. Add three modules: `session_manager.py`, `captcha_limiter.py`, and tighten `client.py`.
 
+**Goal 编排**：由 **Phase 3 工人**一次做完。禁止 New Chat；禁止开始 Phase 4 / 打包。
+
 ## Definition of Done
 
 - [ ] `SessionManager` provides per-`user_id` `HttpClient` instances (cookie isolation)

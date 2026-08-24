@@ -314,7 +314,7 @@ README_STUB = """\
 
 Automated learning client for {platform} ({site_url}).
 
-Bootstrapped with the `learning-site-automation` Cursor skill.
+Bootstrapped with the `learning-site-automation` skill (Goal mode, phases 1–5).
 Phases:
 
 - [x] phase 1 (login)  — pending
@@ -322,7 +322,7 @@ Phases:
 - [ ] phase 3 (stability)
 - [ ] phase 4 (end-to-end runner)
 - [ ] phase 5 (always-on service + web UI)
-- [ ] phase 6 (one-click start + single-file build)
+- [ ] packaging (out of band — `docs/packaging/AGENT.md` on each target OS)
 """
 
 

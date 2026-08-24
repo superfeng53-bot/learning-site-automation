@@ -2,6 +2,8 @@
 
 Goal: stitch the confirmed phase-2 services into one `CourseRunner` that, given (cookies OR credentials, project_id), drives a single course through the site's required learning stages: join/enroll if needed, watch/report progress, exam if the course has one, and credit application when the site exposes that flow. Plus a top-level `run_course.py` CLI that takes the smallest possible set of inputs.
 
+**Goal 编排**：由 **Phase 4 工人**一次做完（含 60s 进度探针）。禁止 New Chat。是否进入 Phase 5 由**父 agent** AskQuestion，工人不要自己问。
+
 ## Definition of Done
 
 - [ ] `<pkg>/course_runner.py` exposes `CourseRunner(course, study, exam=None, credit=None).run(project_id) -> RunResult`

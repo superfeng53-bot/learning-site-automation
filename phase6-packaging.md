@@ -1,16 +1,20 @@
-# Phase 6 — One-Click Start, Single-File Build, CI
+# Packaging Spec — One-Click Start, Single-File Build, CI
 
-Goal: make the project trivial for non-developers to use. Double-click → service runs and browser opens. Plus a single `.exe` / mac binary build, plus a minimal CI that catches import-time regressions.
+**Not part of Goal mode.** Cursor Goal (this skill) ends at Phase 5. This file is the **host-agnostic** spec for the packaging agent (`templates/agents/packaging.md`). Any coding agent (Cursor, Claude Code, Codex, …) runs it **on the target OS** after Phase 5. In a generated project the copy lives at `docs/packaging/SPEC.md`.
 
-## Phase 6 Gate — 开发态通过 ≠ 打包通过
+Do **not** use Cursor-only orchestration: no `CreateGoal`, no New Chat, no browser MCP, no `AskQuestion`, no `rename_chat`, no babysit/PR skills. Shell + Python + this spec are enough.
 
-**硬性规则**：阶段 1–5 全部 `pass`（含 `./start.sh`、`python run_service.py`、Web UI、Excel）**不能**宣布阶段 6 完成。PyInstaller 单文件有独立的运行时路径、资源打包、动态 import 问题，**必须在打包产物上单独验收**。
+Goal: make the project trivial for non-developers. Double-click → service runs and browser opens. Plus a single `.exe` / mac binary, plus optional CI that catches import-time regressions.
+
+## Gate — 开发态通过 ≠ 打包通过
+
+**硬性规则**：阶段 1–5 全部 `pass`（含 `python run_service.py`、Web UI、Excel）**不能**宣布打包完成。PyInstaller 单文件有独立的运行时路径、资源打包、动态 import 问题，**必须在打包产物上单独验收**。
 
 | 验收面 | 能否替代打包 smoke |
 |--------|-------------------|
 | 阶段 5 `./start.sh` / venv 内 `run_service.py` | ❌ 不能 |
 | CI `import <pkg>; import <svc>` | ❌ 不能（未走 PyInstaller） |
-| `scripts/smoke_frozen.py` **pass** | ✅ 阶段 6 打包验收的权威依据 |
+| `scripts/smoke_frozen.py` **pass** | ✅ 打包验收的权威依据 |
 | 手动等效步骤（见 §Packaged Artifact Smoke Test）+ `PHASE6_REPORT` 证据 | ✅ 仅当脚本暂不可用时；须逐项等价 |
 
 **禁止**：`build.sh` 成功生成 `dist/` 文件但未跑打包 smoke 就勾选 DoD；禁止用「源码 import 绿」代替「frozen 可运行」。
@@ -116,7 +120,7 @@ def main():
     else:
         raise SystemExit(
             "缺少 scripts/smoke_frozen.py — 从 templates/code/scripts/ 复制。"
-            "未通过打包 smoke 不得宣布阶段 6 完成。"
+            "未通过打包 smoke 不得宣布打包完成。"
         )
 
 if __name__ == "__main__":
@@ -207,7 +211,7 @@ python scripts/smoke_frozen.py --binary dist/双卫网_04_22.exe --keep-temp
 | `curl -s http://127.0.0.1:<port>/api/health` | `{"ok":true,...}` |
 | 不退出，再双击 exe | 只开浏览器，进程数不变 |
 
-**任一失败**：阶段 6 DoD 为 `fail`，修 spec / `runtime.project_root()` / `datas` / `hiddenimports` 后重跑 `./build.sh`，直至 `smoke_frozen.py` pass。
+**任一失败**：打包 DoD 为 `fail`，修 spec / `runtime.project_root()` / `datas` / `hiddenimports` 后重跑 `./build.sh`，直至 `smoke_frozen.py` pass。
 
 ### run_service.py 冻结态错误可见性
 
@@ -277,7 +281,7 @@ jobs:
 
 Don't try to run integration tests in CI — they need real credentials and network access to the third-party site.
 
-**CI 与打包 smoke 分工**：CI 只防「源码 import 回归」；**PyInstaller 产物验收只在本地/构建机**跑 `smoke_frozen.py`（或 Windows/macOS 构建 agent 上等价步骤）。不要在 CI 里强绑 PyInstaller（耗时长、平台差异大），但 **phase 6 完成前本地 smoke 必须 pass**。
+**CI 与打包 smoke 分工**：CI 只防「源码 import 回归」；**PyInstaller 产物验收只在本地/构建机**跑 `smoke_frozen.py`（或 Windows/macOS 构建 agent 上等价步骤）。不要在 CI 里强绑 PyInstaller（耗时长、平台差异大），但 **宣布打包完成前本地 smoke 必须 pass**。
 
 ## `pyproject.toml` minimum
 
@@ -362,7 +366,7 @@ data/
 
 ## End-of-phase Report
 
-**顺序**：先 `./build.sh`（含 smoke）→ 再填 `PHASE6_REPORT.md`。任一 smoke 失败则阶段 6 **未完成**。
+**顺序**：先 `./build.sh`（含 smoke）→ 再填 `PHASE6_REPORT.md`。任一 smoke 失败则打包 **未完成**。
 
 1. Confirm `./start.sh` works on a clean clone (`rm -rf .venv data/cookies.json && ./start.sh`).
 2. **二次启动**：服务仍在运行时再执行 `./start.sh`（或再双击 exe）→ 仅打开浏览器，任务管理器里仍只有一个服务进程。
@@ -382,4 +386,4 @@ data/
 - **uvicorn / stdlib hiddenimports**: 症状 `ModuleNotFoundError: uvicorn.loops.auto`。Fix：补 spec `hiddenimports`（见上文模板）。
 - **Console window closes immediately on error**: keep `console=True`, add frozen 顶层 `except` + `input()`（见 §Packaged Artifact Smoke Test）。
 - **macOS Gatekeeper**: unsigned binaries trigger a "cannot be opened" dialog. Document `xattr -d com.apple.quarantine <binary>` as the workaround.
-- **CI on Windows or macOS**: avoid unless really needed. The smoke test is import-only, ubuntu is enough — **本地打包 smoke 仍是 phase 6 硬性门禁**。
+- **CI on Windows or macOS**: avoid unless really needed. The smoke test is import-only, ubuntu is enough — **本地打包 smoke 仍是硬性门禁**。

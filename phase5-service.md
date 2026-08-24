@@ -2,6 +2,8 @@
 
 Goal: turn the single-account runner into a long-running scheduler that drives many accounts in parallel, persists state across crashes, and exposes a web console for operators. This phase is **highly generic** — most of the design carries over from site to site. The worker-internal pipeline and optional queues/actions must follow the confirmed capability scope in `docs/API_REQUIREMENTS.md`.
 
+**Goal 编排**：由 **一个 Phase 5 工人**交付（内部可嵌套 store/UI Task）。本阶段结束后 **Cursor Goal 完成**；不要问 Phase 6，不要跑 PyInstaller。
+
 ## Definition of Done
 
 - [ ] `<svc>/persistence/store.py` with SQLite (WAL) schema for `accounts / runs / kv`, plus `ai_subject_cache` when LLM subject mapping is enabled, plus optional tables from `docs/API_REQUIREMENTS.md` such as `apply_queue / credit_applications`
@@ -519,8 +521,8 @@ if __name__ == "__main__":
 
 ### Acceptance (manual)
 
-1. `./start.sh` → 浏览器打开控制台，终端有 uvicorn 日志。
-2. **不关闭第一次**，再双击 `start.sh` 或再运行打包 exe → **只打开浏览器**，不新增进程、不报错弹窗。
+1. `python run_service.py` → 浏览器打开控制台，终端有 uvicorn 日志。（`start.sh` / 打包 exe 归 packaging agent）
+2. **不关闭第一次**，再执行 `python run_service.py` → **只打开浏览器**，不新增进程、不报错弹窗。
 3. 把默认端口占满后启动 → 服务监听 `17866` 等，`endpoint.json` 的 `url` 与实际一致。
 
 ## End-of-phase Report
@@ -530,7 +532,7 @@ if __name__ == "__main__":
 3. One end-to-end test: add the test account via UI, watch it move through the in-scope states (`queued → running → waiting_apply → completed` when credit is in scope, otherwise `queued → running → completed`); on a failed account, verify **复制日志** copies `error_log_text`.
 4. 导出 xlsx → 确认 A–J 列中文表头与模板完全一致；K 列及以后为追加的系统列（状态、说明…）。
 5. **二次启动**：服务运行中再执行 `python run_service.py` → 仅打开浏览器，进程数不增加。
-6. Ask: "OK to enter phase 6 (one-click start + single-file build)?"
+6. **不要**问「是否进入 Phase 6」。Goal 在此结束。父 agent 复制 `docs/packaging/` 后 `UpdateGoal` complete；打包由目标 OS 上的 packaging agent 执行。
 
 ## Pitfalls
 

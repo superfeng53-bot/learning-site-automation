@@ -1,43 +1,53 @@
 # learning-site-automation
 
-面向 Cursor Agent 的技能包：从「学习/继教网站 URL + 测试账号」出发，按六阶段脚手架搭建纯 HTTP 登录、跑课/考试、多账号常驻调度与 Web 控制台（流程提炼自双卫网等项目，站点无关）。
+面向编码 Agent 的技能包：从「学习/继教网站 URL + 测试账号」出发，用 **Goal 模式** 在 **同一会话** 里跑完 Phase 1–5（纯 HTTP 登录、跑课/考试、多账号常驻调度、中文 Web 控制台）。父 agent 只做管理（`CreateGoal`、闸门、`AskQuestion`）；每一阶段派 **一个** 子 agent。
+
+**打包不在本 Goal。** PyInstaller / 一键启动脚本由目标 OS 上的通用 packaging agent 执行（Cursor / Claude Code / Codex 均可），入口是项目内 `docs/packaging/AGENT.md`。
+
+流程提炼自双卫网等项目，站点无关。
 
 ## 目录结构
 
 | 路径 | 说明 |
 |------|------|
-| `SKILL.md` | 技能入口、Cursor 编排（`cursor-agent-playbook.md`）、六阶段总览 |
-| `cursor-agent-playbook.md` | 内置浏览器优先（§1.1）、handoff、验收/缺口闭环（§8）、子 agent、解析用 skill 组合（§5） |
-| `web-ui-spec.md` | Phase 5 Web 控制台规格（**简体中文**、复制日志、凭证一栏/分两栏、B 型课节进度抽屉） |
-| `excel-spec.md` | Excel 导入/导出规格：**文件名、Sheet 名、表头字段名全部中文**；导出列与导入模板对齐 |
-| `progress-sync.md` | B/B′ 课节进度写 `extra_json`、课节完成刷服务端总进度、Web UI 对接 |
-| `phase1-login-recon.md` … `phase6-packaging.md` | 各阶段操作细则与验收清单 |
+| `SKILL.md` | Goal 管理器入口（Phase 1–5） |
+| `cursor-agent-playbook.md` | 父 agent 编排：一会话、一阶段一 Task、禁止 New Chat |
+| `templates/agents/phase-worker.md` | Phase 1–5 工人契约 |
+| `templates/agents/packaging.md` | **宿主无关**打包工人（复制到 `docs/packaging/AGENT.md`） |
+| `phase6-packaging.md` | 打包规格（复制到 `docs/packaging/SPEC.md`） |
+| `web-ui-spec.md` / `excel-spec.md` / `progress-sync.md` | Phase 5 规格 |
+| `phase1-login-recon.md` … `phase5-service.md` | 各阶段 DoD |
 | `scripts/` | `init_project.py`、`captcha_probe.py` |
-| `templates/` | API 需求范围模板、通用需求模板、账号 JSON、项目骨架；`agents/api-recon.md` → `.cursor/agents/` |
+| `templates/code/` | 通用代码，工人复制后对接 API |
 
 ## 安装
 
-将本仓库放到 Cursor 技能目录之一即可：
-
 ```bash
-# 克隆
 git clone https://github.com/<你的用户名>/learning-site-automation.git ~/.cursor/skills/learning-site-automation
 
-# 或符号链接到已有克隆
 ln -sf /path/to/learning-site-automation ~/.cursor/skills/learning-site-automation
 ```
 
-也可放在用户级技能目录 `~/.agents/skills/`（若你的 Cursor 配置使用该路径），与官方文档保持一致即可。
+也可放在 `~/.agents/skills/`。
 
-## 在 Cursor 中触发
+## 在 Cursor 中触发（Goal 模式）
 
-在对话中提供 **站点登录 URL**、**可用的测试用户名/密码**，并说明目标（例如：做自动化、跑课、刷课、持续学习服务）。Agent 会匹配 `SKILL.md` 中的描述并进入六阶段流程；每阶段结束会写 `docs/verification/PHASE<N>_REPORT.md` 并请你确认后再进入下一阶段（有阻塞项时记录在 `docs/gaps/`）。
+提供 **站点登录 URL**、**测试用户名/密码**、项目路径和一句话目标。父 agent 会：
 
-无需单独命令：确保技能目录已被 Cursor 加载（重启或新开 Agent 会话后通常自动发现）。
+1. `CreateGoal`（范围到 Phase 5）
+2. 每阶段一个子 agent；阶段结束写 `docs/verification/PHASE<N>_REPORT.md`，请你确认后再派下一阶段
+3. Phase 5 通过后写入 `docs/packaging/`，`UpdateGoal` complete
+4. **不会**要求你开 New Chat
+
+## 在其他 Agent / 其他机器上打包
+
+把业务仓库拷到目标 OS，对任意编码 Agent 说：
+
+> 按 `docs/packaging/AGENT.md` 打包。规格是 `docs/packaging/SPEC.md`。
+
+权威闸门仍是 `scripts/smoke_frozen.py` exit 0。开发态 `python run_service.py` 通过不能代替。
 
 ## 运营侧中文要求（固定）
-
-生成项目的 Web 控制台与 Excel 导入/导出面向运营人员，以下 surface **必须使用简体中文**：
 
 | 场景 | 要求 | 详细规格 |
 |------|------|----------|
@@ -46,9 +56,9 @@ ln -sf /path/to/learning-site-automation ~/.cursor/skills/learning-site-automati
 | Excel 导入 | 只认中文表头：姓名、账号、密码、学科1、学分1、学科2、学分2、卡号、卡号密码、备注 | `excel-spec.md` §2 |
 | Excel 导出 | A–J 列与模板完全一致；K 起追加：状态、说明、重试次数、创建时间、更新时间、最近运行结果、错误日志 | `excel-spec.md` §3 |
 
-禁止英文或拼音列名（如 `username`、`xingming`）。后端 API / 数据库字段可保持英文，但**用户可见的表格列名、Sheet 名、文件名必须为中文**。
+禁止英文或拼音列名（如 `username`、`xingming`）。后端字段可英文，**用户可见的表格列名、Sheet 名、文件名必须为中文**。
 
 ## 许可与注意
 
-- 技能为脚手架，具体站点的验证码、接口形态需写在目标项目代码中。
-- 请勿将真实账号、Cookie、`data/` 等敏感内容提交到业务仓库；阶段 1 会指导配置 `.gitignore`。
+- 技能为脚手架；验证码与接口形态写在目标项目代码中。
+- 请勿将真实账号、Cookie、`data/` 提交到业务仓库；Phase 1 会配置 `.gitignore`。
